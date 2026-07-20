@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简历投递助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>简历投递助手</h1>
+      <p>先预览，再填入当前网页</p>
+    </div>
+    <button id="openOptions" class="link-button" type="button">资料库</button>
+  </header>
+
+  <main>
+    <div id="status" class="status">正在读取当前页面…</div>
+    <div id="toolbar" class="toolbar" hidden>
+      <label><input id="selectAll" type="checkbox"> 全选</label>
+      <span id="count"></span>
+      <button id="rescan" class="link-button" type="button">重新扫描</button>
+    </div>
+    <div id="results" class="results"></div>
+  </main>
+
+  <footer>
+    <label class="remember"><input id="rememberRules" type="checkbox" checked> 记住本站修正</label>
+    <div class="footer-actions">
+      <button id="learnPage" class="learn-button" type="button">学习本页填写</button>
+      <button id="fill" class="primary" type="button" disabled>填入所选字段</button>
+    </div>
+    <p>不会点击“提交”或“投递”；请填写后人工复核。</p>
+  </footer>
+
+  <script src="field-catalog.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简历资料库</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <div>
+      <span class="eyebrow">LOCAL RESUME PROFILE</span>
+      <h1>简历资料库</h1>
+      <p>资料只保存在本机浏览器中。扩展不会自动提交任何招聘表单。</p>
+    </div>
+    <div class="header-actions">
+      <button id="parseResumeButton" class="secondary" type="button">上传并解析简历</button>
+      <button id="importButton" class="secondary" type="button">导入 JSON</button>
+      <button id="exportButton" class="secondary" type="button">导出备份</button>
+      <button id="saveButton" class="primary" type="button">保存资料</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="navigation"></aside>
+    <form id="profileForm"></form>
+  </main>
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <input id="resumeFile" type="file" accept=".pdf,.docx,.txt,.md,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/json" hidden>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="parseDialog">
+    <div class="dialog-header">
+      <div>
+        <span class="eyebrow dialog-eyebrow">PARSE PREVIEW</span>
+        <h2>确认解析结果</h2>
+      </div>
+      <button id="closeParseDialog" class="icon-button" type="button" aria-label="关闭">×</button>
+    </div>
+    <p id="parseSummary" class="hint"></p>
+    <div id="parseResults"></div>
+    <div class="dialog-actions">
+      <button id="cancelParse" class="plain-button" type="button">取消</button>
+      <button id="applyParsed" class="apply-button" type="button">应用所选并保存</button>
+    </div>
+  </dialog>
+
+  <script src="field-catalog.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="resume-parser.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

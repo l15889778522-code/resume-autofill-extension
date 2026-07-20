@@ -1,0 +1,46 @@
+{
+  "version": 3,
+  "profile": {
+    "fullName": "张三",
+    "englishName": "San Zhang",
+    "phone": "13800000000",
+    "email": "zhangsan@example.com",
+    "gender": "男",
+    "birthDate": "1995-01-01",
+    "city": "上海",
+    "address": "",
+    "hometown": "江苏南京",
+    "nationality": "中国",
+    "workYears": "5",
+    "desiredTitle": "高级前端工程师",
+    "desiredCity": "上海",
+    "expectedSalary": "35k-45k",
+    "availableDate": "2026-08-01",
+    "school": "示例大学",
+    "degree": "本科",
+    "major": "计算机科学与技术",
+    "educationStart": "2013-09-01",
+    "educationEnd": "2017-06-30",
+    "latestCompany": "示例科技有限公司",
+    "latestJobTitle": "前端工程师",
+    "workStart": "2021-03-01",
+    "workEnd": "2026-07-01",
+    "workDescription": "负责核心业务前端架构与性能优化。",
+    "website": "",
+    "github": "https://github.com/example",
+    "linkedin": "",
+    "summary": "5 年前端开发经验，关注工程效率、用户体验与可维护性。",
+    "idNumber": ""
+  },
+  "workExperiences": [
+    {
+      "company": "示例科技有限公司",
+      "jobTitle": "前端工程师",
+      "startDate": "2021-03-01",
+      "endDate": "2026-07-01",
+      "ongoing": false,
+      "description": "负责核心业务前端架构与性能优化。"
+    }
+  ],
+  "learnedAnswers": {}
+}

@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "简历投递助手",
+  "version": "0.5.0",
+  "description": "在用户确认后，将本地保存的简历资料填写到当前招聘网页。",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_title": "简历投递助手",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}
