@@ -95,3 +95,7 @@ npm test
 ```
 
 测试覆盖纯文本字段提取、PDF/DOCX 浏览器解析、解析预览与存储、多段工作经历、近似字段匹配，以及网页表单回填。第三方依赖许可见 `THIRD_PARTY_NOTICES.md`。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE) 开源。第三方组件仍分别遵循其各自许可证，详情见 `THIRD_PARTY_NOTICES.md`。
