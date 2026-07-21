@@ -134,7 +134,7 @@ if (process.env.RESUME_PDF_PATH) {
       educationExperienceCount: Array.isArray(result.educationExperiences) ? result.educationExperiences.length : 0,
       educationSummaries: (result.educationExperiences || []).map((education) => ({ school: education.school, major: education.major, degree: education.degree })),
       workExperienceCount: Array.isArray(result.workExperiences) ? result.workExperiences.length : 0,
-      workSummaries: (result.workExperiences || []).map((experience) => ({ company: experience.company, jobTitle: experience.jobTitle, descriptionStart: experience.description.slice(0, 24) })),
+      workSummaries: (result.workExperiences || []).map((experience) => ({ company: experience.company, jobTitle: experience.jobTitle, category: experience.category, descriptionStart: experience.description.slice(0, 24) })),
       textLength: result.textLength
     };
   }, actualBytes);
@@ -144,6 +144,7 @@ if (process.env.RESUME_PDF_PATH) {
     { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
     { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
   ]);
+  assert.equal(actualResult.workSummaries.every((experience) => experience.category === "internship"), true);
 
   const optionsContext = await browser.newContext();
   await optionsContext.addInitScript(() => {

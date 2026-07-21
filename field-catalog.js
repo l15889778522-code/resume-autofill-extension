@@ -28,6 +28,7 @@
     { key: "workStart", label: "工作开始日期", group: "最近工作经历（自动同步）", type: "date", aliases: ["工作开始时间", "任职开始时间", "employment start", "work start"] },
     { key: "workEnd", label: "工作结束日期", group: "最近工作经历（自动同步）", type: "date", aliases: ["工作结束时间", "离职时间", "employment end", "work end"] },
     { key: "workDescription", label: "工作描述", group: "最近工作经历（自动同步）", type: "textarea", aliases: ["工作描述", "工作内容", "岗位职责", "主要职责", "work description", "responsibilities"] },
+    { key: "internshipSummary", label: "实习经历汇总", group: "实践经历", type: "textarea", aliases: ["实习经历", "实习经验", "实践经历", "实习情况", "internship experience", "internship summary", "internships"] },
     { key: "website", label: "个人网站", group: "链接与简介", aliases: ["个人网站", "个人主页", "作品集", "portfolio", "personal website", "website"] },
     { key: "github", label: "GitHub", group: "链接与简介", aliases: ["github", "github url", "github profile"] },
     { key: "linkedin", label: "LinkedIn", group: "链接与简介", aliases: ["linkedin", "linkedin url", "linkedin profile"] },

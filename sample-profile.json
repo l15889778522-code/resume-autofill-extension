@@ -52,6 +52,7 @@
       "startDate": "2021-03-01",
       "endDate": "2026-07-01",
       "ongoing": false,
+      "category": "work",
       "description": "负责核心业务前端架构与性能优化。"
     }
   ],

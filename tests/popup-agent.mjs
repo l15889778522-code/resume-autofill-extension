@@ -63,6 +63,18 @@ await context.addInitScript(() => {
     score: 96,
     confidence: 96
   };
+  const internshipSummaryCandidate = {
+    ...candidate,
+    elementId: "internship-summary",
+    signature: "textarea:text:实习经历",
+    label: "实习经历",
+    section: "实践经历",
+    questionKey: "实习经历",
+    matchedKey: "internshipSummary",
+    score: 98,
+    confidence: 98,
+    tag: "textarea"
+  };
   const capturedDepartment = {
     signature: "input:text:院系:1",
     questionKey: "院系",
@@ -88,7 +100,7 @@ await context.addInitScript(() => {
     tabs: {
       async query() { return [{ id: 1, url: "https://jobs.example.com/apply" }]; },
       sendMessage(_tabId, message, callback) {
-        if (message.type === "RESUME_SCAN") callback({ ok: true, candidates: [candidate, educationCandidate, emptyDepartmentCandidate], pageContext: { language: "zh-CN" } });
+        if (message.type === "RESUME_SCAN") callback({ ok: true, candidates: [candidate, educationCandidate, emptyDepartmentCandidate, internshipSummaryCandidate], pageContext: { language: "zh-CN" } });
         else if (message.type === "RESUME_CAPTURE") callback({ ok: true, captured: [capturedDepartment] });
         else callback({ ok: true, filled: 1, failed: [] });
       }
@@ -103,7 +115,10 @@ await context.addInitScript(() => {
               { school: "香港理工大学", department: "", major: "医疗数据科学", degree: "硕士" },
               { school: "北师香港浸会大学", department: "理工科技学部", major: "统计学", degree: "本科" }
             ],
-            workExperiences: [],
+            workExperiences: [
+              { company: "国金证券", jobTitle: "业务运营实习生", category: "internship", startDate: "2026-06-01", endDate: "", ongoing: true, description: "客户需求分析与活动效果复盘。" },
+              { company: "深圳锐明科技有限公司", jobTitle: "数据分析", category: "internship", startDate: "2024-06-01", endDate: "2024-08-01", description: "完成非结构化数据提纯。" }
+            ],
             learnedAnswers: { stale_department: { label: "院系", value: "理工科技学部" } },
             siteRules: {},
             aiSettings: { enabled: true, endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", apiKey: "local-test-key" }
@@ -123,6 +138,10 @@ assert.equal(await page.locator(".candidate").filter({ hasText: "专业名称" }
 assert.match(await page.locator(".candidate").filter({ hasText: "专业名称" }).locator(".candidate-value").textContent(), /统计学/);
 assert.equal(await page.locator(".candidate").filter({ hasText: "网页字段：院系" }).locator(".field-map").inputValue(), "");
 assert.match(await page.locator(".candidate").filter({ hasText: "网页字段：院系" }).locator(".candidate-value").textContent(), /请先选择内容/);
+const internshipRow = page.locator(".candidate").filter({ hasText: "网页字段：实习经历" });
+assert.equal(await internshipRow.locator(".field-map").inputValue(), "computed:internshipSummary");
+assert.match(await internshipRow.locator(".candidate-value").textContent(), /国金证券/);
+assert.match(await internshipRow.locator(".candidate-value").textContent(), /深圳锐明科技有限公司/);
 assert.match(await page.locator(".agent-reason").textContent(), /地点偏好/);
 assert.equal(await page.locator(".candidate-check").first().isChecked(), true);
 assert.deepEqual(await page.evaluate(() => globalThis.__requestedOrigins), ["https://api.deepseek.com/*"]);

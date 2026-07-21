@@ -94,5 +94,7 @@ assert.match(layoutResult.profile.workDescription, /客户需求分析/);
 assert.equal(layoutResult.workExperiences.length, 2);
 assert.equal(layoutResult.workExperiences[0].company, "示例证券");
 assert.equal(layoutResult.workExperiences[1].company, "示例科技有限公司");
+assert.equal(layoutResult.workExperiences[0].category, "internship");
+assert.equal(layoutResult.workExperiences[1].category, "internship");
 
 console.log("PARSER_OK");

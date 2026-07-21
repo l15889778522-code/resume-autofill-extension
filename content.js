@@ -180,6 +180,10 @@
     const inputType = (element.getAttribute("type") || "").toLowerCase();
     if (inputType === "email" && result.score < 88) result = { key: "email", score: 88 };
     if (inputType === "tel" && result.score < 88) result = { key: "phone", score: 88 };
+    const descriptorText = normalize(Object.values(descriptor).join(" "));
+    if (element instanceof HTMLTextAreaElement && /实习经历|实习经验|实践经历/.test(descriptorText) && result.score < 92) {
+      result = { key: "internshipSummary", score: 92 };
+    }
     return result;
   }
 
@@ -269,6 +273,7 @@
     const workOccurrences = {};
     const educationOccurrences = {};
     const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+    const aggregateWorkKeys = new Set(["internshipSummary"]);
     const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const candidates = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
@@ -289,13 +294,14 @@
       // learned answer. Once the field is clearly recognized as education or
       // work, let the structured record take precedence over that stale rule.
       const hasStructuredContainer = (educationKeys.has(match.key) && (educationExperiences.length || profile?.[match.key]))
-        || (workKeys.has(match.key) && (workExperiences.length || profile?.[match.key]));
+        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && (workExperiences.length || profile?.[match.key]));
       const isStructuredMatch = match.score >= 68 && hasStructuredContainer;
       const learnedRule = isStructuredMatch ? "" : savedLearnedRule;
       const matched = match.score >= 48;
       const field = matched ? catalog.byKey[match.key] : null;
       const profileValue = field && !learnedRule ? String(profile?.[match.key] || "").trim() : "";
-      const structuredAvailable = !learnedRule && matched && ((educationKeys.has(match.key) && educationExperiences.length) || (workKeys.has(match.key) && workExperiences.length));
+      const structuredAvailable = !learnedRule && matched && ((educationKeys.has(match.key) && educationExperiences.length)
+        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && workExperiences.length));
       const sourceAvailable = Boolean(profileValue) || Boolean(structuredAvailable);
       const naturalQuestionKey = questionKey(descriptor);
       const learnedMatch = bestLearnedMatch(naturalQuestionKey, learnedAnswers, learnedRule);

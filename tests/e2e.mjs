@@ -32,14 +32,22 @@ const educationExperiences = [
   { school: "香港理工大学", department: "", major: "医疗数据科学", degree: "硕士", startDate: "2025-09-01", endDate: "2027-01-01" },
   { school: "北师香港浸会大学", department: "理工科技学部", major: "统计学", degree: "本科", startDate: "2021-09-01", endDate: "2025-07-01" }
 ];
-const scanned = await page.evaluate(({ profileData, educations }) => new Promise((resolve) => {
-  globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, educationExperiences: educations, learnedAnswers: {}, siteRules: {} }, {}, resolve);
-}), { profileData: profile, educations: educationExperiences });
+const workExperiences = [
+  { company: "国金证券", jobTitle: "业务运营实习生", category: "internship", startDate: "2026-06-01", endDate: "", ongoing: true, description: "客户需求分析与活动效果复盘。" },
+  { company: "深圳锐明科技有限公司", jobTitle: "数据分析", category: "internship", startDate: "2024-06-01", endDate: "2024-08-01", ongoing: false, description: "完成非结构化数据提纯。" }
+];
+const scanned = await page.evaluate(({ profileData, educations, work }) => new Promise((resolve) => {
+  globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, educationExperiences: educations, workExperiences: work, learnedAnswers: {}, siteRules: {} }, {}, resolve);
+}), { profileData: profile, educations: educationExperiences, work: workExperiences });
 
 assert.equal(scanned.ok, true);
-assert.equal(scanned.candidates.length, 17);
+assert.equal(scanned.candidates.length, 18);
 assert.equal(scanned.candidates.find((item) => item.label === "姓名").matchedKey, "fullName");
 assert.equal(scanned.candidates.find((item) => item.label === "站点专用问题").matchedKey, "");
+const internshipSummaryCandidate = scanned.candidates.find((item) => item.matchedKey === "internshipSummary");
+assert.equal(internshipSummaryCandidate.matchedKey, "internshipSummary");
+assert.equal(internshipSummaryCandidate.recordType, "");
+assert.ok(internshipSummaryCandidate.confidence >= 88);
 const fuzzyCity = scanned.candidates.find((item) => item.label === "期望城巿");
 assert.equal(fuzzyCity.matchedKey, "desiredCity");
 assert.ok(fuzzyCity.confidence >= 68 && fuzzyCity.confidence < 88);
@@ -114,6 +122,12 @@ const customSelectFill = await page.evaluate((selection) => new Promise((resolve
 }), { ...employmentCandidate, value: "全职" });
 assert.equal(customSelectFill.filled, 1);
 assert.equal(await page.locator("#employment").textContent(), "全职");
+
+const summaryFill = await page.evaluate((selection) => new Promise((resolve) => {
+  globalThis.__testMessageListener({ type: "RESUME_FILL", selections: [selection] }, {}, resolve);
+}), { ...internshipSummaryCandidate, value: "2026年06月–至今｜国金证券｜业务运营实习生\n客户需求分析与活动效果复盘。" });
+assert.equal(summaryFill.filled, 1);
+assert.match(await page.locator("#internship-summary").inputValue(), /国金证券/);
 
 await page.locator("#custom").fill("接受偶尔出差");
 const captured = await page.evaluate((profileData) => new Promise((resolve) => {

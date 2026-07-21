@@ -264,6 +264,7 @@ function mergeEducationExperiences(incoming) {
 function createExperienceCard(experience = {}) {
   const card = document.createElement("article");
   card.className = "experience-card";
+  card.dataset.experienceCategory = experience.category || (/实习/i.test(experience.jobTitle || "") ? "internship" : "");
   const fields = [
     ["company", "公司/单位", "text"],
     ["jobTitle", "职位", "text"],
@@ -316,12 +317,14 @@ function renderWorkExperiences() {
 function collectWorkExperiences() {
   return Array.from(workExperienceList.querySelectorAll(".experience-card")).map((card) => {
     const value = (key) => card.querySelector(`[data-experience-field="${key}"]`).value.trim();
+    const jobTitle = value("jobTitle");
     return {
       company: value("company"),
-      jobTitle: value("jobTitle"),
+      jobTitle,
       startDate: value("startDate"),
       endDate: value("endDate"),
       ongoing: !value("endDate"),
+      category: card.dataset.experienceCategory || (/实习/i.test(jobTitle) ? "internship" : ""),
       description: value("description")
     };
   }).filter((experience) => experience.company || experience.jobTitle || experience.description);

@@ -56,6 +56,13 @@
         sources.push({ sourceRef: `experience:${index}:${key}`, label: `工作经历 ${index + 1} · ${label}`, group: `工作经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false });
       }
     });
+    const hasWorkCategories = (workExperiences || []).some((experience) => experience?.category);
+    const internshipRecords = hasWorkCategories
+      ? (workExperiences || []).filter((experience) => experience.category === "internship")
+      : ((workExperiences || []).some((experience) => /实习|intern/i.test(experience?.jobTitle || "")) ? (workExperiences || []) : []);
+    if (internshipRecords.length) {
+      sources.push({ sourceRef: "computed:internshipSummary", label: "全部实习经历汇总", group: "自动汇总", type: "textarea", sensitive: false });
+    }
     for (const [key, answer] of Object.entries(learnedAnswers || {})) {
       if (!String(answer?.value || "").trim()) continue;
       sources.push({ sourceRef: `learned:${key}`, label: cleanText(answer.label || key), group: "已学习答案", type: "text", sensitive: Boolean(answer.sensitive) });

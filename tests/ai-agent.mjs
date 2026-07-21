@@ -9,7 +9,7 @@ await import(pathToFileURL(path.join(here, "..", "ai-agent.js")));
 const agent = globalThis.ResumeAiAgent;
 const catalog = globalThis.ResumeFieldCatalog;
 const profile = { fullName: "张三", phone: "13800000000", desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学" };
-const sources = agent.sourceCatalog(catalog, profile, [{ company: "隐私公司", jobTitle: "数据分析师" }, { company: "第二公司", jobTitle: "运营分析师" }], {
+const sources = agent.sourceCatalog(catalog, profile, [{ company: "隐私公司", jobTitle: "数据分析师", category: "internship" }, { company: "第二公司", jobTitle: "运营分析师", category: "internship" }], {
   travel: { label: "是否接受出差", value: "每月最多两次", sensitive: false }
 }, [
   { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
@@ -33,6 +33,7 @@ for (const privateValue of ["张三", "13800000000", "上海", "隐私公司", "
 assert.ok(promptText.includes("期望城市"));
 assert.equal(sources.some((source) => source.sourceRef === "profile:major"), false);
 assert.equal(sources.some((source) => source.sourceRef === "education:1:major"), true);
+assert.equal(sources.some((source) => source.sourceRef === "computed:internshipSummary"), true);
 assert.equal(agent.endpointOriginPattern("https://api.deepseek.com/chat/completions"), "https://api.deepseek.com/*");
 assert.equal(agent.endpointOriginPattern("http://localhost:11434/v1/chat/completions"), "http://localhost/*");
 assert.throws(() => agent.endpointOriginPattern("http://example.com/v1/chat/completions"), /HTTPS/);

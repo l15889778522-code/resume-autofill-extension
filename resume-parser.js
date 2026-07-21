@@ -196,6 +196,7 @@
 
   function parseWorkExperiences(lines, result) {
     const headingIndex = lines.findIndex((line) => ["工作经历", "工作经验", "实习经历", "实习经验", "employment", "experience"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    const internshipSection = headingIndex >= 0 && /实习|internship/i.test(lines[headingIndex]);
     const scopeStart = headingIndex >= 0 && headingIndex < lines.length - 1 ? headingIndex + 1 : 0;
     const endIndex = lines.findIndex((line, index) => index >= scopeStart && ["项目经历", "项目经验", "教育背景", "教育经历", "技能", "专业技能", "projects", "education", "skills"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
     const scopeEnd = endIndex >= scopeStart ? endIndex : lines.length;
@@ -223,6 +224,7 @@
         startDate: candidate.range.start,
         endDate: candidate.range.end,
         ongoing: candidate.range.ongoing,
+        category: internshipSection || /实习/i.test(jobTitle) ? "internship" : "work",
         description: descriptionLines.join("\n"),
         confidence: 88
       };

@@ -67,9 +67,35 @@ async function ensureInjected() {
   await chrome.scripting.executeScript({ target: { tabId: state.tabId }, files: ["field-catalog.js", "content.js"] });
 }
 
+function internshipRecords() {
+  const records = state.workExperiences || [];
+  const hasCategories = records.some((experience) => experience?.category);
+  if (hasCategories) return records.filter((experience) => experience.category === "internship");
+  return records.some((experience) => /实习|intern/i.test(experience?.jobTitle || "")) ? records : [];
+}
+
+function displayMonth(value, ongoing = false) {
+  if (!value) return ongoing ? "至今" : "时间待补充";
+  const match = String(value).match(/((?:19|20)\d{2})-(\d{2})/);
+  return match ? `${match[1]}年${Number(match[2])}月` : String(value);
+}
+
+function internshipSummary() {
+  return internshipRecords().map((experience) => {
+    const dates = `${displayMonth(experience.startDate)}–${displayMonth(experience.endDate, experience.ongoing || !experience.endDate)}`;
+    const title = String(experience.jobTitle || "").replace("|", "（") + (String(experience.jobTitle || "").includes("|") ? "）" : "");
+    const heading = [dates, experience.company, title].filter(Boolean).join("｜");
+    return [heading, String(experience.description || "").trim()].filter(Boolean).join("\n");
+  }).filter(Boolean).join("\n\n");
+}
+
 function sourceFor(candidate) {
   if (candidate.preferredSourceRef && sourceDetails(candidate.preferredSourceRef).value) return candidate.preferredSourceRef;
   if (candidate.agentSourceRef && sourceDetails(candidate.agentSourceRef).value) return candidate.agentSourceRef;
+  if (candidate.matchedKey === "internshipSummary") {
+    if (state.profile.internshipSummary) return "profile:internshipSummary";
+    if (internshipSummary()) return "computed:internshipSummary";
+  }
   const educationField = educationFieldMap[candidate.matchedKey];
   const education = state.educationExperiences[candidate.recordIndex || candidate.repeatIndex || 0];
   if (educationField && education?.[educationField]) return `education:${candidate.recordIndex || candidate.repeatIndex || 0}:${educationField}`;
@@ -82,6 +108,7 @@ function sourceFor(candidate) {
 }
 
 function sourceDetails(sourceRef) {
+  if (sourceRef === "computed:internshipSummary") return { value: internshipSummary(), sensitive: false, key: "internshipSummary" };
   if (sourceRef.startsWith("education:")) {
     const [, index, key] = sourceRef.split(":");
     const education = state.educationExperiences[Number(index)] || {};
@@ -129,7 +156,10 @@ function sourceOptions(selectedSource) {
     const selected = ref === selectedSource ? " selected" : "";
     return `<option value="${ref}"${selected}>经历 ${index + 1} · ${escapeHtml(experience.company || experience.jobTitle)} · ${label}</option>`;
   })).join("");
-  return `<option value="">选择填写内容…</option><optgroup label="简历资料">${profileOptions}</optgroup>${educationOptions ? `<optgroup label="教育经历">${educationOptions}</optgroup>` : ""}${experienceOptions ? `<optgroup label="工作经历">${experienceOptions}</optgroup>` : ""}${learnedOptions ? `<optgroup label="已学习答案">${learnedOptions}</optgroup>` : ""}`;
+  const computedValue = internshipSummary();
+  const computedRef = "computed:internshipSummary";
+  const computedOptions = computedValue ? `<option value="${computedRef}"${selectedSource === computedRef ? " selected" : ""}>自动汇总 · 全部实习经历</option>` : "";
+  return `<option value="">选择填写内容…</option><optgroup label="简历资料">${profileOptions}</optgroup>${computedOptions ? `<optgroup label="自动汇总">${computedOptions}</optgroup>` : ""}${educationOptions ? `<optgroup label="教育经历">${educationOptions}</optgroup>` : ""}${experienceOptions ? `<optgroup label="工作经历">${experienceOptions}</optgroup>` : ""}${learnedOptions ? `<optgroup label="已学习答案">${learnedOptions}</optgroup>` : ""}`;
 }
 
 function confidenceBadge(candidate, source) {
