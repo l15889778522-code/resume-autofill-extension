@@ -25,6 +25,21 @@ const elements = {
   rememberRules: document.querySelector("#rememberRules"),
   aiRecognize: document.querySelector("#aiRecognize")
 };
+const educationFieldMap = {
+  school: "school",
+  department: "department",
+  degree: "degree",
+  major: "major",
+  educationStart: "startDate",
+  educationEnd: "endDate"
+};
+const workFieldMap = {
+  latestCompany: "company",
+  latestJobTitle: "jobTitle",
+  workStart: "startDate",
+  workEnd: "endDate",
+  workDescription: "description"
+};
 
 function escapeHtml(value) {
   const div = document.createElement("div");
@@ -55,20 +70,6 @@ async function ensureInjected() {
 function sourceFor(candidate) {
   if (candidate.preferredSourceRef && sourceDetails(candidate.preferredSourceRef).value) return candidate.preferredSourceRef;
   if (candidate.agentSourceRef && sourceDetails(candidate.agentSourceRef).value) return candidate.agentSourceRef;
-  const workFieldMap = {
-    latestCompany: "company",
-    latestJobTitle: "jobTitle",
-    workStart: "startDate",
-    workEnd: "endDate",
-    workDescription: "description"
-  };
-  const educationFieldMap = {
-    school: "school",
-    degree: "degree",
-    major: "major",
-    educationStart: "startDate",
-    educationEnd: "endDate"
-  };
   const educationField = educationFieldMap[candidate.matchedKey];
   const education = state.educationExperiences[candidate.recordIndex || candidate.repeatIndex || 0];
   if (educationField && education?.[educationField]) return `education:${candidate.recordIndex || candidate.repeatIndex || 0}:${educationField}`;
@@ -104,7 +105,7 @@ function sourceDetails(sourceRef) {
 }
 
 function sourceOptions(selectedSource) {
-  const legacyEducationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
+  const legacyEducationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
   const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
   const profileOptions = catalog.fields.filter((field) => !((state.educationExperiences.length && legacyEducationKeys.has(field.key)) || (state.workExperiences.length && legacyWorkKeys.has(field.key)))).map((field) => {
     const ref = `profile:${field.key}`;
@@ -116,7 +117,7 @@ function sourceOptions(selectedSource) {
     const selected = ref === selectedSource ? " selected" : "";
     return `<option value="${escapeHtml(ref)}"${selected}>已学习 · ${escapeHtml(answer.label || key)}</option>`;
   }).join("");
-  const educationLabels = { school: "学校", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
+  const educationLabels = { school: "学校", department: "院系", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
   const educationOptions = state.educationExperiences.flatMap((education, index) => Object.entries(educationLabels).filter(([key]) => education[key]).map(([key, label]) => {
     const ref = `education:${index}:${key}`;
     const selected = ref === selectedSource ? " selected" : "";
@@ -204,9 +205,11 @@ function renderLearn() {
   }
 
   state.candidates.forEach((candidate, index) => {
-    const destination = candidate.matchedKey
-      ? `保存到资料库 · ${catalog.byKey[candidate.matchedKey]?.label || candidate.matchedKey}`
-      : "保存为自定义答案";
+    const destination = candidate.recordType === "education"
+      ? `保存到教育经历 ${candidate.recordIndex + 1} · ${catalog.byKey[candidate.matchedKey]?.label || candidate.matchedKey}`
+      : (candidate.recordType === "work"
+        ? `保存到工作经历 ${candidate.recordIndex + 1} · ${catalog.byKey[candidate.matchedKey]?.label || candidate.matchedKey}`
+        : (candidate.matchedKey ? `保存到资料库 · ${catalog.byKey[candidate.matchedKey]?.label || candidate.matchedKey}` : "保存为自定义答案"));
     const article = document.createElement("article");
     article.className = "candidate learn-candidate";
     article.dataset.index = index;
@@ -260,6 +263,8 @@ async function scan() {
       type: "RESUME_SCAN",
       profile: state.profile,
       learnedAnswers: state.learnedAnswers,
+      educationExperiences: state.educationExperiences,
+      workExperiences: state.workExperiences,
       siteRules: state.siteRules[state.hostname] || {}
     });
     if (!response?.ok) throw new Error(response?.error || "扫描失败");
@@ -338,9 +343,17 @@ async function capturePage() {
   try {
     setStatus("正在读取你已填写的字段…");
     await initializeTab();
-    const response = await sendMessage({ type: "RESUME_CAPTURE", profile: state.profile });
+    const response = await sendMessage({ type: "RESUME_CAPTURE", profile: state.profile, educationExperiences: state.educationExperiences, workExperiences: state.workExperiences });
     if (!response?.ok) throw new Error(response?.error || "读取失败");
     state.candidates = (response.captured || []).filter((item) => {
+      if (item.recordType === "education") {
+        const key = educationFieldMap[item.matchedKey];
+        return Boolean(key && !state.educationExperiences[item.recordIndex]?.[key] && item.questionKey && item.value);
+      }
+      if (item.recordType === "work") {
+        const key = workFieldMap[item.matchedKey];
+        return Boolean(key && !state.workExperiences[item.recordIndex]?.[key] && item.questionKey && item.value);
+      }
       if (item.matchedKey && state.profile[item.matchedKey]) return false;
       return Boolean(item.questionKey && item.value);
     });
@@ -386,13 +399,22 @@ async function fillSelected() {
 }
 
 async function saveLearned() {
+  let structuredCount = 0;
   let profileCount = 0;
   let customCount = 0;
   for (const row of selectedRows()) {
     const candidate = state.candidates[Number(row.dataset.index)];
     const value = row.querySelector(".learn-value").value.trim();
     if (!value) continue;
-    if (candidate.matchedKey && !state.profile[candidate.matchedKey]) {
+    if (candidate.recordType === "education" && educationFieldMap[candidate.matchedKey] && state.educationExperiences[candidate.recordIndex]) {
+      state.educationExperiences[candidate.recordIndex][educationFieldMap[candidate.matchedKey]] = value;
+      if (candidate.recordIndex === 0) state.profile[candidate.matchedKey] = value;
+      structuredCount += 1;
+    } else if (candidate.recordType === "work" && workFieldMap[candidate.matchedKey] && state.workExperiences[candidate.recordIndex]) {
+      state.workExperiences[candidate.recordIndex][workFieldMap[candidate.matchedKey]] = value;
+      if (candidate.recordIndex === 0) state.profile[candidate.matchedKey] = value;
+      structuredCount += 1;
+    } else if (candidate.matchedKey && !state.profile[candidate.matchedKey]) {
       state.profile[candidate.matchedKey] = value;
       profileCount += 1;
     } else {
@@ -405,12 +427,12 @@ async function saveLearned() {
       customCount += 1;
     }
   }
-  if (!profileCount && !customCount) {
+  if (!structuredCount && !profileCount && !customCount) {
     setStatus("没有选择可保存的答案。", true);
     return;
   }
-  await chrome.storage.local.set({ profile: state.profile, learnedAnswers: state.learnedAnswers });
-  setStatus(`已学习 ${profileCount + customCount} 项；下次遇到相同字段时会进入自动填写预览。`);
+  await chrome.storage.local.set({ profile: state.profile, educationExperiences: state.educationExperiences, workExperiences: state.workExperiences, learnedAnswers: state.learnedAnswers });
+  setStatus(`已学习 ${structuredCount + profileCount + customCount} 项；经历字段已保存到对应记录，下次会进入自动填写预览。`);
   elements.results.replaceChildren();
   elements.toolbar.hidden = true;
   elements.fill.disabled = true;

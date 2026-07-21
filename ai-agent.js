@@ -35,14 +35,14 @@
   function sourceCatalog(catalog, profile, workExperiences, learnedAnswers, educationExperiences) {
     const sources = [];
     const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
-    const legacyEducationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
+    const legacyEducationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     for (const field of catalog.fields || []) {
       if (!String(profile?.[field.key] || "").trim()) continue;
       if ((workExperiences || []).length && legacyWorkKeys.has(field.key)) continue;
       if ((educationExperiences || []).length && legacyEducationKeys.has(field.key)) continue;
       sources.push({ sourceRef: `profile:${field.key}`, label: field.label, group: field.group, type: field.type || "text", sensitive: Boolean(field.sensitive) });
     }
-    const educationLabels = { school: "学校", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
+    const educationLabels = { school: "学校", department: "院系", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
     (educationExperiences || []).forEach((education, index) => {
       for (const [key, label] of Object.entries(educationLabels)) {
         if (!String(education?.[key] || "").trim()) continue;
@@ -115,9 +115,10 @@
       const sourceRef = cleanText(item?.sourceRef, 180);
       if (!allowedElements.has(elementId) || !allowedSources.has(sourceRef) || seen.has(elementId)) continue;
       const candidate = candidateById.get(elementId);
-      if (candidate?.recordType && hasStructuredType(candidate.recordType)) {
+      const expectedSourceType = candidate?.recordType === "work" ? "experience" : candidate?.recordType;
+      if (expectedSourceType && hasStructuredType(expectedSourceType)) {
         const [sourceType, sourceIndex] = sourceRef.split(":");
-        if (sourceType !== candidate.recordType || Number(sourceIndex) !== Number(candidate.recordIndex || 0)) continue;
+        if (sourceType !== expectedSourceType || Number(sourceIndex) !== Number(candidate.recordIndex || 0)) continue;
       }
       seen.add(elementId);
       assignments.push({

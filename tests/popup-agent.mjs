@@ -17,6 +17,7 @@ const browser = await chromium.launch({ headless: true, ...(executablePath ? { e
 const context = await browser.newContext();
 await context.addInitScript(() => {
   globalThis.__requestedOrigins = [];
+  globalThis.__savedValues = {};
   const candidate = {
     elementId: "desired-location",
     signature: "input:text:工作地点偏好",
@@ -48,6 +49,30 @@ await context.addInitScript(() => {
     score: 94,
     confidence: 94
   };
+  const emptyDepartmentCandidate = {
+    ...candidate,
+    elementId: "department-1",
+    signature: "input:text:院系:1",
+    label: "院系",
+    section: "教育经历",
+    questionKey: "院系",
+    matchedKey: "department",
+    learnedKey: "stale_department",
+    recordType: "education",
+    recordIndex: 0,
+    score: 96,
+    confidence: 96
+  };
+  const capturedDepartment = {
+    signature: "input:text:院系:1",
+    questionKey: "院系",
+    label: "院系",
+    value: "数据科学与人工智能系",
+    matchedKey: "department",
+    recordType: "education",
+    recordIndex: 0,
+    sensitive: false
+  };
   globalThis.chrome = {
     runtime: {
       lastError: null,
@@ -63,7 +88,8 @@ await context.addInitScript(() => {
     tabs: {
       async query() { return [{ id: 1, url: "https://jobs.example.com/apply" }]; },
       sendMessage(_tabId, message, callback) {
-        if (message.type === "RESUME_SCAN") callback({ ok: true, candidates: [candidate, educationCandidate], pageContext: { language: "zh-CN" } });
+        if (message.type === "RESUME_SCAN") callback({ ok: true, candidates: [candidate, educationCandidate, emptyDepartmentCandidate], pageContext: { language: "zh-CN" } });
+        else if (message.type === "RESUME_CAPTURE") callback({ ok: true, captured: [capturedDepartment] });
         else callback({ ok: true, filled: 1, failed: [] });
       }
     },
@@ -74,16 +100,16 @@ await context.addInitScript(() => {
           return {
             profile: { desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
             educationExperiences: [
-              { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
-              { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
+              { school: "香港理工大学", department: "", major: "医疗数据科学", degree: "硕士" },
+              { school: "北师香港浸会大学", department: "理工科技学部", major: "统计学", degree: "本科" }
             ],
             workExperiences: [],
-            learnedAnswers: {},
+            learnedAnswers: { stale_department: { label: "院系", value: "理工科技学部" } },
             siteRules: {},
             aiSettings: { enabled: true, endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", apiKey: "local-test-key" }
           };
         },
-        async set() {}
+        async set(values) { Object.assign(globalThis.__savedValues, values); }
       }
     }
   };
@@ -95,8 +121,18 @@ await page.locator(".confidence-ai").waitFor();
 assert.equal(await page.locator(".field-map").first().inputValue(), "profile:desiredCity");
 assert.equal(await page.locator(".candidate").filter({ hasText: "专业名称" }).locator(".field-map").inputValue(), "education:1:major");
 assert.match(await page.locator(".candidate").filter({ hasText: "专业名称" }).locator(".candidate-value").textContent(), /统计学/);
+assert.equal(await page.locator(".candidate").filter({ hasText: "网页字段：院系" }).locator(".field-map").inputValue(), "");
+assert.match(await page.locator(".candidate").filter({ hasText: "网页字段：院系" }).locator(".candidate-value").textContent(), /请先选择内容/);
 assert.match(await page.locator(".agent-reason").textContent(), /地点偏好/);
 assert.equal(await page.locator(".candidate-check").first().isChecked(), true);
 assert.deepEqual(await page.evaluate(() => globalThis.__requestedOrigins), ["https://api.deepseek.com/*"]);
+await page.locator("#learnPage").click();
+await page.locator(".learn-destination").waitFor();
+assert.match(await page.locator(".learn-destination").textContent(), /教育经历 1 · 院系/);
+await page.locator("#fill").click();
+await page.waitForFunction(() => globalThis.__savedValues.educationExperiences?.[0]?.department === "数据科学与人工智能系");
+const learnedStorage = await page.evaluate(() => globalThis.__savedValues);
+assert.equal(learnedStorage.educationExperiences[0].department, "数据科学与人工智能系");
+assert.equal(learnedStorage.educationExperiences[1].department, "理工科技学部");
 await browser.close();
 console.log("POPUP_AGENT_OK");

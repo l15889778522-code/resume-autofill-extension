@@ -18,6 +18,7 @@
     { key: "expectedSalary", label: "期望薪资", group: "求职信息", aliases: ["期望薪资", "期望月薪", "薪资要求", "desired salary", "expected salary", "salary expectation"] },
     { key: "availableDate", label: "到岗日期", group: "求职信息", type: "date", aliases: ["到岗日期", "可到岗时间", "入职时间", "available date", "available start date", "availability"] },
     { key: "school", label: "最近学校", group: "教育经历", aliases: ["学校名称", "毕业院校", "院校名称", "学校", "school name", "university", "college"] },
+    { key: "department", label: "院系", group: "教育经历", aliases: ["院系", "院系名称", "学院名称", "所属学院", "所属院系", "department", "faculty", "school/department"] },
     { key: "degree", label: "最高学历", group: "教育经历", type: "select", aliases: ["最高学历", "学历", "学位", "degree", "education level", "highest education"] },
     { key: "major", label: "专业", group: "教育经历", aliases: ["专业名称", "所学专业", "专业", "major", "field of study"] },
     { key: "educationStart", label: "教育开始日期", group: "教育经历", type: "date", aliases: ["入学时间", "教育开始时间", "education start", "school start"] },

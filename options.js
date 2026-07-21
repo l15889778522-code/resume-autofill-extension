@@ -171,6 +171,7 @@ function createEducationCard(education = {}) {
   card.className = "experience-card education-card";
   const fields = [
     ["school", "学校", "text"],
+    ["department", "院系", "text"],
     ["major", "专业", "text"],
     ["degree", "学历/学位", "text"],
     ["startDate", "开始日期", "date"],
@@ -224,6 +225,7 @@ function collectEducationExperiences() {
     const value = (key) => card.querySelector(`[data-education-field="${key}"]`).value.trim();
     return {
       school: value("school"),
+      department: value("department"),
       major: value("major"),
       degree: value("degree"),
       startDate: value("startDate"),
@@ -238,11 +240,12 @@ function syncLatestEducation(clearWhenEmpty = false) {
   const latest = educationExperiences[0];
   if (!latest) {
     if (clearWhenEmpty) {
-      for (const key of ["school", "degree", "major", "educationStart", "educationEnd"]) form.elements[key].value = "";
+      for (const key of ["school", "department", "degree", "major", "educationStart", "educationEnd"]) form.elements[key].value = "";
     }
     return;
   }
   form.elements.school.value = latest.school || "";
+  form.elements.department.value = latest.department || "";
   form.elements.degree.value = latest.degree || "";
   form.elements.major.value = latest.major || "";
   form.elements.educationStart.value = latest.startDate || "";
@@ -353,7 +356,7 @@ function showParsePreview(result, fileName) {
   const dialog = document.querySelector("#parseDialog");
   const container = document.querySelector("#parseResults");
   const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
-  const legacyEducationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
+  const legacyEducationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
   pendingParse = result;
   const entries = catalog.fields.filter((field) => String(result.profile?.[field.key] || "").trim()
     && !(result.workExperiences?.length && legacyWorkKeys.has(field.key))
@@ -527,7 +530,7 @@ async function load() {
   aiSettings = globalThis.ResumeAiAgent.normalizeSettings(stored.aiSettings);
   for (const field of catalog.fields) form.elements[field.key].value = profile[field.key] || "";
   if (!educationExperiences.length && (profile.school || profile.major || profile.degree)) {
-    educationExperiences = [{ school: profile.school || "", major: profile.major || "", degree: profile.degree || "", startDate: profile.educationStart || "", endDate: profile.educationEnd || "", ongoing: !profile.educationEnd, description: "" }];
+    educationExperiences = [{ school: profile.school || "", department: profile.department || "", major: profile.major || "", degree: profile.degree || "", startDate: profile.educationStart || "", endDate: profile.educationEnd || "", ongoing: !profile.educationEnd, description: "" }];
   }
   renderEducationExperiences();
   renderWorkExperiences();
@@ -575,7 +578,7 @@ async function importJson(file) {
   workExperiences = data.workExperiences || [];
   for (const field of catalog.fields) form.elements[field.key].value = String(profile[field.key] || "");
   if (!educationExperiences.length && (profile.school || profile.major || profile.degree)) {
-    educationExperiences = [{ school: profile.school || "", major: profile.major || "", degree: profile.degree || "", startDate: profile.educationStart || "", endDate: profile.educationEnd || "", ongoing: !profile.educationEnd, description: "" }];
+    educationExperiences = [{ school: profile.school || "", department: profile.department || "", major: profile.major || "", degree: profile.degree || "", startDate: profile.educationStart || "", endDate: profile.educationEnd || "", ongoing: !profile.educationEnd, description: "" }];
   }
   renderEducationExperiences();
   syncLatestEducation();

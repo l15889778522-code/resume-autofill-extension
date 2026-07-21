@@ -9,7 +9,7 @@ await import(pathToFileURL(path.join(here, "..", "ai-agent.js")));
 const agent = globalThis.ResumeAiAgent;
 const catalog = globalThis.ResumeFieldCatalog;
 const profile = { fullName: "张三", phone: "13800000000", desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学" };
-const sources = agent.sourceCatalog(catalog, profile, [{ company: "隐私公司", jobTitle: "数据分析师" }], {
+const sources = agent.sourceCatalog(catalog, profile, [{ company: "隐私公司", jobTitle: "数据分析师" }, { company: "第二公司", jobTitle: "运营分析师" }], {
   travel: { label: "是否接受出差", value: "每月最多两次", sensitive: false }
 }, [
   { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
@@ -27,7 +27,7 @@ const candidates = [{
 }];
 
 const promptText = JSON.stringify(agent.buildPrompt(candidates, sources, { hostname: "jobs.example.com", language: "zh-CN" }));
-for (const privateValue of ["张三", "13800000000", "上海", "隐私公司", "数据分析师", "每月最多两次", "香港理工大学", "医疗数据科学", "北师香港浸会大学", "统计学"]) {
+for (const privateValue of ["张三", "13800000000", "上海", "隐私公司", "数据分析师", "第二公司", "运营分析师", "每月最多两次", "香港理工大学", "医疗数据科学", "北师香港浸会大学", "统计学"]) {
   assert.equal(promptText.includes(privateValue), false, `prompt leaked private value: ${privateValue}`);
 }
 assert.ok(promptText.includes("期望城市"));
@@ -74,5 +74,15 @@ const guarded = agent.validatePlan({ assignments: [
 ] }, educationCandidates, sources);
 assert.deepEqual(guarded.map(({ elementId, sourceRef }) => ({ elementId, sourceRef })), [
   { elementId: "school-2", sourceRef: "education:1:school" }
+]);
+const workGuarded = agent.validatePlan({ assignments: [
+  { elementId: "company-2", sourceRef: "experience:0:company", confidence: 99 },
+  { elementId: "title-2", sourceRef: "experience:1:jobTitle", confidence: 95 }
+] }, [
+  { elementId: "company-2", recordType: "work", recordIndex: 1 },
+  { elementId: "title-2", recordType: "work", recordIndex: 1 }
+], sources);
+assert.deepEqual(workGuarded.map(({ elementId, sourceRef }) => ({ elementId, sourceRef })), [
+  { elementId: "title-2", sourceRef: "experience:1:jobTitle" }
 ]);
 console.log("AI_AGENT_OK");

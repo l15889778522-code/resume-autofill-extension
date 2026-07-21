@@ -154,11 +154,13 @@
     if (!candidates.length) return;
     const experiences = candidates.map((candidate, candidateIndex) => {
       const nextIndex = candidates[candidateIndex + 1]?.index || scopeEnd;
-      const description = lines.slice(candidate.index + 1, nextIndex)
-        .filter((line) => !dateRangeFromLine(line))
-        .join("\n");
+      const detailLines = lines.slice(candidate.index + 1, nextIndex).filter((line) => !dateRangeFromLine(line));
+      const departmentLine = detailLines.find((line) => /^(?:院系|学院|所属院系|department|faculty)\s*[:：]/i.test(line));
+      const department = departmentLine ? cleanValue(departmentLine.replace(/^(?:院系|学院|所属院系|department|faculty)\s*[:：]/i, "")) : "";
+      const description = detailLines.filter((line) => line !== departmentLine).join("\n");
       return {
         school: candidate.school,
+        department,
         degree: candidate.degree,
         major: candidate.major,
         startDate: candidate.range.start,
@@ -177,6 +179,7 @@
     const latestEvidence = candidates.find((candidate) => candidate.school === latest.school && candidate.range.start === latest.startDate)?.line || "";
     const synchronized = {
       school: latest.school,
+      department: latest.department,
       degree: latest.degree,
       major: latest.major,
       educationStart: latest.startDate,

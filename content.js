@@ -244,12 +244,32 @@
       .some((token) => text.includes(normalize(token)));
   }
 
-  function scan(profile, siteRules, learnedAnswers) {
+  function inferRecordIndex(element, records, fallbackIndex) {
+    if (!records?.length) return fallbackIndex;
+    let container = element.parentElement;
+    for (let depth = 0; container && depth < 7; depth += 1, container = container.parentElement) {
+      const nearbyValues = Array.from(container.querySelectorAll(supportedSelector))
+        .filter((candidate) => candidate !== element && visible(candidate))
+        .map((candidate) => normalize(currentValue(candidate)))
+        .filter((value) => value.length >= 2);
+      if (!nearbyValues.length) continue;
+      const scores = records.map((record) => ["school", "department", "major", "degree", "startDate", "endDate"]
+        .map((key) => normalize(record?.[key]))
+        .filter((value) => value.length >= 2)
+        .reduce((score, value) => score + Number(nearbyValues.some((nearby) => nearby.includes(value) || value.includes(nearby))), 0));
+      const bestScore = Math.max(...scores);
+      if (bestScore <= 0 || scores.filter((score) => score === bestScore).length !== 1) continue;
+      return scores.indexOf(bestScore);
+    }
+    return fallbackIndex;
+  }
+
+  function scan(profile, siteRules, learnedAnswers, educationExperiences = [], workExperiences = []) {
     const radioGroups = new Set();
     const workOccurrences = {};
     const educationOccurrences = {};
     const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
-    const educationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
+    const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const candidates = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
       if (!visible(element)) continue;
@@ -268,11 +288,15 @@
       // Older versions could remember a standard repeated field as a custom
       // learned answer. Once the field is clearly recognized as education or
       // work, let the structured record take precedence over that stale rule.
-      const isStructuredMatch = match.score >= 68 && (workKeys.has(match.key) || educationKeys.has(match.key));
+      const hasStructuredContainer = (educationKeys.has(match.key) && (educationExperiences.length || profile?.[match.key]))
+        || (workKeys.has(match.key) && (workExperiences.length || profile?.[match.key]));
+      const isStructuredMatch = match.score >= 68 && hasStructuredContainer;
       const learnedRule = isStructuredMatch ? "" : savedLearnedRule;
       const matched = match.score >= 48;
       const field = matched ? catalog.byKey[match.key] : null;
       const profileValue = field && !learnedRule ? String(profile?.[match.key] || "").trim() : "";
+      const structuredAvailable = !learnedRule && matched && ((educationKeys.has(match.key) && educationExperiences.length) || (workKeys.has(match.key) && workExperiences.length));
+      const sourceAvailable = Boolean(profileValue) || Boolean(structuredAvailable);
       const naturalQuestionKey = questionKey(descriptor);
       const learnedMatch = bestLearnedMatch(naturalQuestionKey, learnedAnswers, learnedRule);
       const learnedKey = learnedMatch.key;
@@ -285,12 +309,19 @@
         elementId = crypto.randomUUID();
         element.setAttribute(markerAttribute, elementId);
       }
-      const workOccurrenceKey = profileValue && workKeys.has(match.key) ? match.key : "";
-      const educationOccurrenceKey = profileValue && educationKeys.has(match.key) ? match.key : "";
+      const workOccurrenceKey = sourceAvailable && workKeys.has(match.key) ? match.key : "";
+      const educationOccurrenceKey = sourceAvailable && educationKeys.has(match.key) ? match.key : "";
       const repeatIndex = workOccurrenceKey ? (workOccurrences[workOccurrenceKey] || 0) : (educationOccurrenceKey ? (educationOccurrences[educationOccurrenceKey] || 0) : 0);
       if (workOccurrenceKey) workOccurrences[workOccurrenceKey] = repeatIndex + 1;
       if (educationOccurrenceKey) educationOccurrences[educationOccurrenceKey] = repeatIndex + 1;
       const recordType = workOccurrenceKey ? "work" : (educationOccurrenceKey ? "education" : "");
+      const recordIndex = recordType === "education" ? inferRecordIndex(element, educationExperiences, repeatIndex) : repeatIndex;
+      let preferredSourceRef = /^(?:experience|education):/.test(savedRule) ? savedRule : "";
+      if (preferredSourceRef && recordType) {
+        const [savedType, savedIndex] = preferredSourceRef.split(":");
+        const expectedSourceType = recordType === "work" ? "experience" : recordType;
+        if (savedType !== expectedSourceType || Number(savedIndex) !== Number(recordIndex)) preferredSourceRef = "";
+      }
       candidates.push({
         elementId,
         signature: fieldSignature,
@@ -301,23 +332,27 @@
         required: element.required || element.getAttribute("aria-required") === "true",
         options: optionsFor(element),
         questionKey: naturalQuestionKey,
-        matchedKey: profileValue ? match.key : "",
-        learnedKey: profileValue ? "" : learnedKey,
-        preferredSourceRef: /^(?:experience|education):/.test(savedRule) ? savedRule : "",
+        matchedKey: sourceAvailable ? match.key : "",
+        learnedKey: sourceAvailable ? "" : learnedKey,
+        preferredSourceRef,
         repeatIndex,
         recordType,
-        recordIndex: recordType ? repeatIndex : 0,
+        recordIndex: recordType ? recordIndex : 0,
         score: match.score,
-        confidence: profileValue ? match.score : learnedMatch.score,
+        confidence: sourceAvailable ? match.score : learnedMatch.score,
         currentValue: currentValue(element),
-        sensitive: isSensitive(descriptor, profileValue ? field : learnedAnswer)
+        sensitive: isSensitive(descriptor, sourceAvailable ? field : learnedAnswer)
       });
     }
     return candidates;
   }
 
-  function capture(profile) {
+  function capture(profile, educationExperiences = [], workExperiences = []) {
     const radioGroups = new Set();
+    const workOccurrences = {};
+    const educationOccurrences = {};
+    const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+    const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const captured = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
       if (!visible(element) || element.type === "checkbox") continue;
@@ -332,12 +367,20 @@
       if (!key || !value) continue;
       const match = bestMatch(element, descriptor, "");
       const field = match.score >= 48 ? catalog.byKey[match.key] : null;
+      const recordType = field && educationKeys.has(field.key) && educationExperiences.length ? "education"
+        : (field && workKeys.has(field.key) && workExperiences.length ? "work" : "");
+      const occurrences = recordType === "education" ? educationOccurrences : workOccurrences;
+      const repeatIndex = recordType ? (occurrences[field.key] || 0) : 0;
+      if (recordType) occurrences[field.key] = repeatIndex + 1;
+      const recordIndex = recordType === "education" ? inferRecordIndex(element, educationExperiences, repeatIndex) : repeatIndex;
       captured.push({
         signature: signature(element, descriptor),
         questionKey: key,
         label: descriptor.label || descriptor.aria || descriptor.placeholder || descriptor.name || descriptor.id,
         value,
         matchedKey: field?.key || "",
+        recordType,
+        recordIndex: recordType ? recordIndex : 0,
         sensitive: isSensitive(descriptor, field)
       });
     }
@@ -473,10 +516,10 @@
     try {
       if (message.type === "RESUME_SCAN") sendResponse({
         ok: true,
-        candidates: scan(message.profile, message.siteRules, message.learnedAnswers),
+        candidates: scan(message.profile, message.siteRules, message.learnedAnswers, message.educationExperiences, message.workExperiences),
         pageContext: { language: document.documentElement.lang || navigator.language || "" }
       });
-      else if (message.type === "RESUME_CAPTURE") sendResponse({ ok: true, captured: capture(message.profile || {}) });
+      else if (message.type === "RESUME_CAPTURE") sendResponse({ ok: true, captured: capture(message.profile || {}, message.educationExperiences, message.workExperiences) });
     } catch (error) {
       sendResponse({ ok: false, error: error.message || String(error) });
     }
