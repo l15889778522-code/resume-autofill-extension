@@ -3,6 +3,7 @@
 const catalog = globalThis.ResumeFieldCatalog;
 const state = {
   profile: {},
+  educationExperiences: [],
   workExperiences: [],
   learnedAnswers: {},
   candidates: [],
@@ -61,6 +62,16 @@ function sourceFor(candidate) {
     workEnd: "endDate",
     workDescription: "description"
   };
+  const educationFieldMap = {
+    school: "school",
+    degree: "degree",
+    major: "major",
+    educationStart: "startDate",
+    educationEnd: "endDate"
+  };
+  const educationField = educationFieldMap[candidate.matchedKey];
+  const education = state.educationExperiences[candidate.recordIndex || candidate.repeatIndex || 0];
+  if (educationField && education?.[educationField]) return `education:${candidate.recordIndex || candidate.repeatIndex || 0}:${educationField}`;
   const experienceField = workFieldMap[candidate.matchedKey];
   const experience = state.workExperiences[candidate.repeatIndex || 0];
   if (experienceField && experience?.[experienceField]) return `experience:${candidate.repeatIndex || 0}:${experienceField}`;
@@ -70,6 +81,11 @@ function sourceFor(candidate) {
 }
 
 function sourceDetails(sourceRef) {
+  if (sourceRef.startsWith("education:")) {
+    const [, index, key] = sourceRef.split(":");
+    const education = state.educationExperiences[Number(index)] || {};
+    return { value: education[key] || "", sensitive: false, key };
+  }
   if (sourceRef.startsWith("experience:")) {
     const [, index, key] = sourceRef.split(":");
     const experience = state.workExperiences[Number(index)] || {};
@@ -88,7 +104,9 @@ function sourceDetails(sourceRef) {
 }
 
 function sourceOptions(selectedSource) {
-  const profileOptions = catalog.fields.map((field) => {
+  const legacyEducationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
+  const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+  const profileOptions = catalog.fields.filter((field) => !((state.educationExperiences.length && legacyEducationKeys.has(field.key)) || (state.workExperiences.length && legacyWorkKeys.has(field.key)))).map((field) => {
     const ref = `profile:${field.key}`;
     const selected = ref === selectedSource ? " selected" : "";
     return `<option value="${ref}"${selected}>${field.group} · ${field.label}</option>`;
@@ -98,13 +116,19 @@ function sourceOptions(selectedSource) {
     const selected = ref === selectedSource ? " selected" : "";
     return `<option value="${escapeHtml(ref)}"${selected}>已学习 · ${escapeHtml(answer.label || key)}</option>`;
   }).join("");
+  const educationLabels = { school: "学校", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
+  const educationOptions = state.educationExperiences.flatMap((education, index) => Object.entries(educationLabels).filter(([key]) => education[key]).map(([key, label]) => {
+    const ref = `education:${index}:${key}`;
+    const selected = ref === selectedSource ? " selected" : "";
+    return `<option value="${ref}"${selected}>教育 ${index + 1} · ${escapeHtml(education.school || education.major)} · ${label}</option>`;
+  })).join("");
   const experienceLabels = { company: "公司", jobTitle: "职位", startDate: "开始日期", endDate: "结束日期", description: "工作描述" };
   const experienceOptions = state.workExperiences.flatMap((experience, index) => Object.entries(experienceLabels).filter(([key]) => experience[key]).map(([key, label]) => {
     const ref = `experience:${index}:${key}`;
     const selected = ref === selectedSource ? " selected" : "";
     return `<option value="${ref}"${selected}>经历 ${index + 1} · ${escapeHtml(experience.company || experience.jobTitle)} · ${label}</option>`;
   })).join("");
-  return `<option value="">选择填写内容…</option><optgroup label="简历资料">${profileOptions}</optgroup>${experienceOptions ? `<optgroup label="工作经历">${experienceOptions}</optgroup>` : ""}${learnedOptions ? `<optgroup label="已学习答案">${learnedOptions}</optgroup>` : ""}`;
+  return `<option value="">选择填写内容…</option><optgroup label="简历资料">${profileOptions}</optgroup>${educationOptions ? `<optgroup label="教育经历">${educationOptions}</optgroup>` : ""}${experienceOptions ? `<optgroup label="工作经历">${experienceOptions}</optgroup>` : ""}${learnedOptions ? `<optgroup label="已学习答案">${learnedOptions}</optgroup>` : ""}`;
 }
 
 function confidenceBadge(candidate, source) {
@@ -225,10 +249,11 @@ async function scan() {
   try {
     setStatus("正在扫描当前页面…");
     await initializeTab();
-    const stored = await chrome.storage.local.get(["profile", "siteRules", "learnedAnswers", "workExperiences", "aiSettings"]);
+    const stored = await chrome.storage.local.get(["profile", "siteRules", "learnedAnswers", "educationExperiences", "workExperiences", "aiSettings"]);
     state.profile = stored.profile || {};
     state.siteRules = stored.siteRules || {};
     state.learnedAnswers = stored.learnedAnswers || {};
+    state.educationExperiences = stored.educationExperiences || [];
     state.workExperiences = stored.workExperiences || [];
     state.aiSettings = globalThis.ResumeAiAgent.normalizeSettings(stored.aiSettings);
     const response = await sendMessage({
@@ -275,7 +300,7 @@ async function recognizeWithAi() {
       setStatus("未授予 AI 接口访问权限，已保留本地匹配结果。", true);
       return;
     }
-    const sources = globalThis.ResumeAiAgent.sourceCatalog(catalog, state.profile, state.workExperiences, state.learnedAnswers);
+    const sources = globalThis.ResumeAiAgent.sourceCatalog(catalog, state.profile, state.workExperiences, state.learnedAnswers, state.educationExperiences);
     const eligible = state.candidates.filter((candidate) => !candidate.currentValue && Number(candidate.confidence || 0) < 110);
     if (!eligible.length || !sources.length) {
       setStatus("当前页面没有需要 Agent 重新判断的空字段。", false);

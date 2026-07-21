@@ -34,6 +34,20 @@ await context.addInitScript(() => {
     sensitive: false,
     options: []
   };
+  const educationCandidate = {
+    ...candidate,
+    elementId: "major-2",
+    signature: "input:text:专业名称:2",
+    label: "专业名称",
+    section: "教育经历",
+    questionKey: "专业名称",
+    matchedKey: "major",
+    repeatIndex: 1,
+    recordType: "education",
+    recordIndex: 1,
+    score: 94,
+    confidence: 94
+  };
   globalThis.chrome = {
     runtime: {
       lastError: null,
@@ -49,7 +63,7 @@ await context.addInitScript(() => {
     tabs: {
       async query() { return [{ id: 1, url: "https://jobs.example.com/apply" }]; },
       sendMessage(_tabId, message, callback) {
-        if (message.type === "RESUME_SCAN") callback({ ok: true, candidates: [candidate], pageContext: { language: "zh-CN" } });
+        if (message.type === "RESUME_SCAN") callback({ ok: true, candidates: [candidate, educationCandidate], pageContext: { language: "zh-CN" } });
         else callback({ ok: true, filled: 1, failed: [] });
       }
     },
@@ -58,7 +72,11 @@ await context.addInitScript(() => {
         async setAccessLevel() {},
         async get() {
           return {
-            profile: { desiredCity: "上海" },
+            profile: { desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
+            educationExperiences: [
+              { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
+              { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
+            ],
             workExperiences: [],
             learnedAnswers: {},
             siteRules: {},
@@ -74,9 +92,11 @@ const page = await context.newPage();
 await page.goto(`file:///${path.join(extensionRoot, "popup.html").replaceAll("\\", "/")}`);
 await page.locator("#aiRecognize").click();
 await page.locator(".confidence-ai").waitFor();
-assert.equal(await page.locator(".field-map").inputValue(), "profile:desiredCity");
+assert.equal(await page.locator(".field-map").first().inputValue(), "profile:desiredCity");
+assert.equal(await page.locator(".candidate").filter({ hasText: "专业名称" }).locator(".field-map").inputValue(), "education:1:major");
+assert.match(await page.locator(".candidate").filter({ hasText: "专业名称" }).locator(".candidate-value").textContent(), /统计学/);
 assert.match(await page.locator(".agent-reason").textContent(), /地点偏好/);
-assert.equal(await page.locator(".candidate-check").isChecked(), true);
+assert.equal(await page.locator(".candidate-check").first().isChecked(), true);
 assert.deepEqual(await page.evaluate(() => globalThis.__requestedOrigins), ["https://api.deepseek.com/*"]);
 await browser.close();
 console.log("POPUP_AGENT_OK");

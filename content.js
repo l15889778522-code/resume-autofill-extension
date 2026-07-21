@@ -247,6 +247,9 @@
   function scan(profile, siteRules, learnedAnswers) {
     const radioGroups = new Set();
     const workOccurrences = {};
+    const educationOccurrences = {};
+    const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+    const educationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
     const candidates = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
       if (!visible(element)) continue;
@@ -277,10 +280,12 @@
         elementId = crypto.randomUUID();
         element.setAttribute(markerAttribute, elementId);
       }
-      const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
-      const occurrenceKey = profileValue && workKeys.has(match.key) ? match.key : "";
-      const repeatIndex = occurrenceKey ? (workOccurrences[occurrenceKey] || 0) : 0;
-      if (occurrenceKey) workOccurrences[occurrenceKey] = repeatIndex + 1;
+      const workOccurrenceKey = profileValue && workKeys.has(match.key) ? match.key : "";
+      const educationOccurrenceKey = profileValue && educationKeys.has(match.key) ? match.key : "";
+      const repeatIndex = workOccurrenceKey ? (workOccurrences[workOccurrenceKey] || 0) : (educationOccurrenceKey ? (educationOccurrences[educationOccurrenceKey] || 0) : 0);
+      if (workOccurrenceKey) workOccurrences[workOccurrenceKey] = repeatIndex + 1;
+      if (educationOccurrenceKey) educationOccurrences[educationOccurrenceKey] = repeatIndex + 1;
+      const recordType = workOccurrenceKey ? "work" : (educationOccurrenceKey ? "education" : "");
       candidates.push({
         elementId,
         signature: fieldSignature,
@@ -293,8 +298,10 @@
         questionKey: naturalQuestionKey,
         matchedKey: profileValue ? match.key : "",
         learnedKey: profileValue ? "" : learnedKey,
-        preferredSourceRef: savedRule.startsWith("experience:") ? savedRule : "",
+        preferredSourceRef: /^(?:experience|education):/.test(savedRule) ? savedRule : "",
         repeatIndex,
+        recordType,
+        recordIndex: recordType ? repeatIndex : 0,
         score: match.score,
         confidence: profileValue ? match.score : learnedMatch.score,
         currentValue: currentValue(element),

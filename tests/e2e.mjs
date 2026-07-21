@@ -27,13 +27,13 @@ await page.evaluate(() => {
 await page.addScriptTag({ path: path.join(here, "..", "field-catalog.js") });
 await page.addScriptTag({ path: path.join(here, "..", "content.js") });
 
-const profile = { fullName: "张三", phone: "13800000000", email: "new@example.com", degree: "本科", desiredCity: "上海", latestCompany: "当前公司", latestJobTitle: "数据分析师" };
+const profile = { fullName: "张三", phone: "13800000000", email: "new@example.com", school: "香港理工大学", major: "医疗数据科学", degree: "本科", desiredCity: "上海", latestCompany: "当前公司", latestJobTitle: "数据分析师" };
 const scanned = await page.evaluate((profileData) => new Promise((resolve) => {
   globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, learnedAnswers: {}, siteRules: {} }, {}, resolve);
 }), profile);
 
 assert.equal(scanned.ok, true);
-assert.equal(scanned.candidates.length, 11);
+assert.equal(scanned.candidates.length, 15);
 assert.equal(scanned.candidates.find((item) => item.label === "姓名").matchedKey, "fullName");
 assert.equal(scanned.candidates.find((item) => item.label === "站点专用问题").matchedKey, "");
 const fuzzyCity = scanned.candidates.find((item) => item.label === "期望城巿");
@@ -41,6 +41,10 @@ assert.equal(fuzzyCity.matchedKey, "desiredCity");
 assert.ok(fuzzyCity.confidence >= 68 && fuzzyCity.confidence < 88);
 const companyCandidates = scanned.candidates.filter((item) => item.matchedKey === "latestCompany");
 const titleCandidates = scanned.candidates.filter((item) => item.matchedKey === "latestJobTitle");
+const schoolCandidates = scanned.candidates.filter((item) => item.matchedKey === "school");
+const majorCandidates = scanned.candidates.filter((item) => item.matchedKey === "major");
+assert.deepEqual(schoolCandidates.map((item) => [item.recordType, item.recordIndex]), [["education", 0], ["education", 1]]);
+assert.deepEqual(majorCandidates.map((item) => [item.recordType, item.recordIndex]), [["education", 0], ["education", 1]]);
 assert.deepEqual(companyCandidates.map((item) => item.repeatIndex), [0, 1]);
 assert.deepEqual(titleCandidates.map((item) => item.repeatIndex), [0, 1]);
 const employmentCandidate = scanned.candidates.find((item) => item.label === "雇佣类型");
@@ -50,6 +54,10 @@ const preferredScan = await page.evaluate(({ profileData, signature }) => new Pr
   globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, learnedAnswers: {}, siteRules: { [signature]: "experience:1:company" } }, {}, resolve);
 }), { profileData: profile, signature: companyCandidates[0].signature });
 assert.equal(preferredScan.candidates.find((item) => item.signature === companyCandidates[0].signature).preferredSourceRef, "experience:1:company");
+const preferredEducationScan = await page.evaluate(({ profileData, signature }) => new Promise((resolve) => {
+  globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, learnedAnswers: {}, siteRules: { [signature]: "education:1:school" } }, {}, resolve);
+}), { profileData: profile, signature: schoolCandidates[0].signature });
+assert.equal(preferredEducationScan.candidates.find((item) => item.signature === schoolCandidates[0].signature).preferredSourceRef, "education:1:school");
 
 const selections = scanned.candidates
   .filter((item) => ["fullName", "phone", "degree"].includes(item.matchedKey))

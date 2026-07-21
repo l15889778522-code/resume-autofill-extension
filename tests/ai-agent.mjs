@@ -8,10 +8,13 @@ await import(pathToFileURL(path.join(here, "..", "ai-agent.js")));
 
 const agent = globalThis.ResumeAiAgent;
 const catalog = globalThis.ResumeFieldCatalog;
-const profile = { fullName: "张三", phone: "13800000000", desiredCity: "上海" };
+const profile = { fullName: "张三", phone: "13800000000", desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学" };
 const sources = agent.sourceCatalog(catalog, profile, [{ company: "隐私公司", jobTitle: "数据分析师" }], {
   travel: { label: "是否接受出差", value: "每月最多两次", sensitive: false }
-});
+}, [
+  { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
+  { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
+]);
 const candidates = [{
   elementId: "field-1",
   label: "工作地点偏好",
@@ -24,10 +27,12 @@ const candidates = [{
 }];
 
 const promptText = JSON.stringify(agent.buildPrompt(candidates, sources, { hostname: "jobs.example.com", language: "zh-CN" }));
-for (const privateValue of ["张三", "13800000000", "上海", "隐私公司", "数据分析师", "每月最多两次"]) {
+for (const privateValue of ["张三", "13800000000", "上海", "隐私公司", "数据分析师", "每月最多两次", "香港理工大学", "医疗数据科学", "北师香港浸会大学", "统计学"]) {
   assert.equal(promptText.includes(privateValue), false, `prompt leaked private value: ${privateValue}`);
 }
 assert.ok(promptText.includes("期望城市"));
+assert.equal(sources.some((source) => source.sourceRef === "profile:major"), false);
+assert.equal(sources.some((source) => source.sourceRef === "education:1:major"), true);
 assert.equal(agent.endpointOriginPattern("https://api.deepseek.com/chat/completions"), "https://api.deepseek.com/*");
 assert.equal(agent.endpointOriginPattern("http://localhost:11434/v1/chat/completions"), "http://localhost/*");
 assert.throws(() => agent.endpointOriginPattern("http://example.com/v1/chat/completions"), /HTTPS/);
@@ -58,4 +63,16 @@ const assignments = await agent.planMappings({
 assert.equal(requestBody.response_format.type, "json_object");
 assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
 assert.deepEqual(assignments, [{ elementId: "field-1", sourceRef: "profile:desiredCity", confidence: 93, reason: "属于求职意向中的地点偏好" }]);
+
+const educationCandidates = [
+  { elementId: "school-2", recordType: "education", recordIndex: 1 },
+  { elementId: "major-2", recordType: "education", recordIndex: 1 }
+];
+const guarded = agent.validatePlan({ assignments: [
+  { elementId: "school-2", sourceRef: "education:1:school", confidence: 95 },
+  { elementId: "major-2", sourceRef: "education:0:major", confidence: 99 }
+] }, educationCandidates, sources);
+assert.deepEqual(guarded.map(({ elementId, sourceRef }) => ({ elementId, sourceRef })), [
+  { elementId: "school-2", sourceRef: "education:1:school" }
+]);
 console.log("AI_AGENT_OK");

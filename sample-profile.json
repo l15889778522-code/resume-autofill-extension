@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "profile": {
     "fullName": "张三",
     "englishName": "San Zhang",
@@ -32,6 +32,17 @@
     "summary": "5 年前端开发经验，关注工程效率、用户体验与可维护性。",
     "idNumber": ""
   },
+  "educationExperiences": [
+    {
+      "school": "示例大学",
+      "major": "计算机科学与技术",
+      "degree": "本科",
+      "startDate": "2013-09-01",
+      "endDate": "2017-06-30",
+      "ongoing": false,
+      "description": "主修数据结构、数据库与软件工程。"
+    }
+  ],
   "workExperiences": [
     {
       "company": "示例科技有限公司",

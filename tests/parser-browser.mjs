@@ -131,12 +131,19 @@ if (process.env.RESUME_PDF_PATH) {
       hasLatestCompany: Boolean(result.profile.latestCompany),
       hasLatestJobTitle: Boolean(result.profile.latestJobTitle),
       hasWorkDescription: Boolean(result.profile.workDescription),
+      educationExperienceCount: Array.isArray(result.educationExperiences) ? result.educationExperiences.length : 0,
+      educationSummaries: (result.educationExperiences || []).map((education) => ({ school: education.school, major: education.major, degree: education.degree })),
       workExperienceCount: Array.isArray(result.workExperiences) ? result.workExperiences.length : 0,
       workSummaries: (result.workExperiences || []).map((experience) => ({ company: experience.company, jobTitle: experience.jobTitle, descriptionStart: experience.description.slice(0, 24) })),
       textLength: result.textLength
     };
   }, actualBytes);
   console.log("ACTUAL_RESUME", JSON.stringify(actualResult));
+  assert.equal(actualResult.educationExperienceCount, 2);
+  assert.deepEqual(actualResult.educationSummaries, [
+    { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
+    { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
+  ]);
 
   const optionsContext = await browser.newContext();
   await optionsContext.addInitScript(() => {
@@ -158,9 +165,14 @@ if (process.env.RESUME_PDF_PATH) {
   await optionsPage.goto(`http://127.0.0.1:${port}/options.html`);
   await optionsPage.locator("#resumeFile").setInputFiles(process.env.RESUME_PDF_PATH);
   await optionsPage.locator("#parseDialog").waitFor({ state: "visible" });
+  assert.equal(await optionsPage.locator(".parse-education-card").count(), 2);
   assert.equal(await optionsPage.locator(".parse-work-card").count(), 2);
   await optionsPage.locator("#applyParsed").click();
   const saved = await optionsPage.evaluate(() => globalThis.__storageData);
+  assert.equal(saved.educationExperiences.length, 2);
+  assert.equal(saved.profile.school, saved.educationExperiences[0].school);
+  assert.equal(saved.educationExperiences[1].school, "北师香港浸会大学");
+  assert.equal(saved.educationExperiences[1].major, "统计学");
   assert.equal(saved.workExperiences.length, 2);
   assert.equal(saved.profile.latestCompany, saved.workExperiences[0].company);
   while (await optionsPage.locator(".experience-remove").count()) await optionsPage.locator(".experience-remove").first().click();
@@ -169,6 +181,12 @@ if (process.env.RESUME_PDF_PATH) {
   const afterDelete = await optionsPage.evaluate(() => globalThis.__storageData);
   assert.equal(afterDelete.workExperiences.length, 0);
   assert.equal(afterDelete.profile.latestCompany, "");
+  while (await optionsPage.locator(".education-remove").count()) await optionsPage.locator(".education-remove").first().click();
+  await optionsPage.locator("#saveButton").click();
+  await optionsPage.waitForTimeout(50);
+  const afterEducationDelete = await optionsPage.evaluate(() => globalThis.__storageData);
+  assert.equal(afterEducationDelete.educationExperiences.length, 0);
+  assert.equal(afterEducationDelete.profile.school, "");
   await optionsContext.close();
 }
 

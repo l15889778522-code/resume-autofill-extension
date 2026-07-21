@@ -56,6 +56,9 @@ const layoutText = `
 求职岗位： 数据分析/数据运营
 教育背景
 2025-09 ~ 2027-01 示例理工大学 医疗数据科学（硕士）
+研究方向：医疗数据挖掘、统计建模
+2021-09 ~ 2025-07 北师香港浸会大学 统计学（本科）
+统计与分析课：数据挖掘、时间序列分析
 实习经验
 2024-06 ~ 2024-08 示例科技有限公司 数据分析
 历史项目分析与报表制作。
@@ -75,6 +78,15 @@ assert.equal(layoutResult.profile.degree, "硕士");
 assert.equal(layoutResult.profile.major, "医疗数据科学");
 assert.equal(layoutResult.profile.educationStart, "2025-09-01");
 assert.equal(layoutResult.profile.educationEnd, "2027-01-01");
+assert.equal(layoutResult.educationExperiences.length, 2);
+assert.equal(layoutResult.educationExperiences[0].school, "示例理工大学");
+assert.equal(layoutResult.educationExperiences[0].major, "医疗数据科学");
+assert.equal(layoutResult.educationExperiences[0].degree, "硕士");
+assert.equal(layoutResult.educationExperiences[1].school, "北师香港浸会大学");
+assert.equal(layoutResult.educationExperiences[1].major, "统计学");
+assert.equal(layoutResult.educationExperiences[1].degree, "本科");
+assert.match(layoutResult.educationExperiences[0].description, /医疗数据挖掘/);
+assert.match(layoutResult.educationExperiences[1].description, /时间序列分析/);
 assert.equal(layoutResult.profile.latestCompany, "示例证券");
 assert.match(layoutResult.profile.latestJobTitle, /业务运营实习生/);
 assert.equal(layoutResult.profile.workStart, "2026-06-01");

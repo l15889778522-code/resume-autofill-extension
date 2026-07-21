@@ -32,12 +32,23 @@
     return `${parsed.protocol}//${parsed.hostname}/*`;
   }
 
-  function sourceCatalog(catalog, profile, workExperiences, learnedAnswers) {
+  function sourceCatalog(catalog, profile, workExperiences, learnedAnswers, educationExperiences) {
     const sources = [];
+    const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+    const legacyEducationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
     for (const field of catalog.fields || []) {
       if (!String(profile?.[field.key] || "").trim()) continue;
+      if ((workExperiences || []).length && legacyWorkKeys.has(field.key)) continue;
+      if ((educationExperiences || []).length && legacyEducationKeys.has(field.key)) continue;
       sources.push({ sourceRef: `profile:${field.key}`, label: field.label, group: field.group, type: field.type || "text", sensitive: Boolean(field.sensitive) });
     }
+    const educationLabels = { school: "学校", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
+    (educationExperiences || []).forEach((education, index) => {
+      for (const [key, label] of Object.entries(educationLabels)) {
+        if (!String(education?.[key] || "").trim()) continue;
+        sources.push({ sourceRef: `education:${index}:${key}`, label: `教育经历 ${index + 1} · ${label}`, group: `教育经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false });
+      }
+    });
     const experienceLabels = { company: "公司/单位", jobTitle: "职位", startDate: "开始日期", endDate: "结束日期", description: "工作描述" };
     (workExperiences || []).forEach((experience, index) => {
       for (const [key, label] of Object.entries(experienceLabels)) {
@@ -62,6 +73,8 @@
       required: Boolean(candidate.required),
       hasCurrentValue: Boolean(candidate.currentValue),
       options: Array.isArray(candidate.options) ? candidate.options.map((option) => cleanText(option, 100)).filter(Boolean).slice(0, 80) : [],
+      recordType: ["education", "work"].includes(candidate.recordType) ? candidate.recordType : "",
+      recordIndex: Math.max(0, Number(candidate.recordIndex || 0)),
       localSuggestion: cleanText(candidate.sourceRef || candidate.preferredSourceRef, 180),
       localConfidence: Math.max(0, Math.min(100, Number(candidate.confidence || 0)))
     };
@@ -93,12 +106,19 @@
   function validatePlan(plan, candidates, sources) {
     const allowedElements = new Set((candidates || []).map((candidate) => candidate.elementId));
     const allowedSources = new Set((sources || []).map((source) => source.sourceRef));
+    const candidateById = new Map((candidates || []).map((candidate) => [candidate.elementId, candidate]));
+    const hasStructuredType = (type) => (sources || []).some((source) => source.sourceRef.startsWith(`${type}:`));
     const seen = new Set();
     const assignments = [];
     for (const item of Array.isArray(plan?.assignments) ? plan.assignments : []) {
       const elementId = cleanText(item?.elementId, 80);
       const sourceRef = cleanText(item?.sourceRef, 180);
       if (!allowedElements.has(elementId) || !allowedSources.has(sourceRef) || seen.has(elementId)) continue;
+      const candidate = candidateById.get(elementId);
+      if (candidate?.recordType && hasStructuredType(candidate.recordType)) {
+        const [sourceType, sourceIndex] = sourceRef.split(":");
+        if (sourceType !== candidate.recordType || Number(sourceIndex) !== Number(candidate.recordIndex || 0)) continue;
+      }
       seen.add(elementId);
       assignments.push({
         elementId,
@@ -133,7 +153,7 @@
           messages: [
             {
               role: "system",
-              content: "你是招聘网申表单映射 Agent。根据网页字段的标签、所属区块、控件类型和选项，从 allowedSources 中选择最符合的 sourceRef。必须区分现居城市与期望城市、学历与学位、教育经历与工作经历，并按重复区块顺序匹配多段经历。不得编造值、字段或 sourceRef；不确定时省略。已有值的字段不要映射。只返回 JSON 对象：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"简短理由\"}]}。"
+              content: "你是招聘网申表单映射 Agent。根据网页字段的标签、所属区块、控件类型和选项，从 allowedSources 中选择最符合的 sourceRef。必须区分现居城市与期望城市、学历与学位、教育经历与工作经历，并按重复区块顺序匹配多段经历。同一个 recordType+recordIndex 区块内的学校、专业、学历和日期必须全部来自相同索引的结构化记录，严禁跨教育记录拼接。不得编造值、字段或 sourceRef；不确定时省略。已有值的字段不要映射。只返回 JSON 对象：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"简短理由\"}]}。"
             },
             { role: "user", content: JSON.stringify(prompt) }
           ]

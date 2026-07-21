@@ -55,11 +55,11 @@ textarea { min-height: 112px; resize: vertical; }
 .parse-confidence { justify-self: end; padding: 3px 7px; border-radius: 10px; background: #e5f1eb; color: #2e694f; font-size: 11px; }
 .parse-existing { grid-column: 3 / -1; margin-top: -5px; color: #8a6650; font-size: 11px; }
 .parse-subheading { margin: 20px 0 8px; font-size: 15px; }
-.parse-work-card { display: grid; grid-template-columns: 24px 1fr; gap: 10px; margin-top: 9px; padding: 13px; border: 1px solid #d8e1dc; border-radius: 9px; background: #f9fbfa; }
-.parse-work-check { margin-top: 3px; accent-color: #246b4e; }
-.parse-work-content { display: grid; gap: 5px; min-width: 0; }
-.parse-work-dates { color: #687871; font-size: 11px; }
-.parse-work-description { min-height: 90px; font-size: 12px; }
+.parse-work-card, .parse-education-card { display: grid; grid-template-columns: 24px 1fr; gap: 10px; margin-top: 9px; padding: 13px; border: 1px solid #d8e1dc; border-radius: 9px; background: #f9fbfa; }
+.parse-work-check, .parse-education-check { margin-top: 3px; accent-color: #246b4e; }
+.parse-work-content, .parse-education-content { display: grid; gap: 5px; min-width: 0; }
+.parse-work-dates, .parse-education-dates { color: #687871; font-size: 11px; }
+.parse-work-description, .parse-education-description { min-height: 90px; font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 24px 20px; border-top: 1px solid #e3e9e5; }
 .plain-button { border: 1px solid #c7d3cd; background: white; color: #45564f; }
 .apply-button { border: 1px solid #246b4e; background: #246b4e; color: white; font-weight: 700; }

@@ -6,6 +6,7 @@ const navigation = document.querySelector("#navigation");
 const toast = document.querySelector("#toast");
 const groups = [...new Set(catalog.fields.map((field) => field.group))];
 let learnedAnswers = {};
+let educationExperiences = [];
 let workExperiences = [];
 let pendingParse = null;
 let aiSettings = { ...globalThis.ResumeAiAgent.DEFAULT_SETTINGS };
@@ -36,6 +37,16 @@ for (const group of groups) {
   section.innerHTML = `<h2>${group}</h2>${hint}<div class="fields">${catalog.fields.filter((field) => field.group === group).map(inputFor).join("")}</div>`;
   form.append(section);
 }
+
+const educationListLink = document.createElement("a");
+educationListLink.href = "#education-experiences";
+educationListLink.textContent = "全部教育经历";
+navigation.append(educationListLink);
+const educationListSection = document.createElement("section");
+educationListSection.id = "education-experiences";
+educationListSection.innerHTML = '<div class="section-title-row"><div><h2>全部教育经历</h2><p class="hint">学校、专业、学历和日期按同一条记录保存；第一段会同步到上方教育字段。</p></div><button id="addEducationExperience" class="inline-button" type="button">添加一段</button></div><div id="educationExperienceList"></div>';
+form.append(educationListSection);
+const educationExperienceList = educationListSection.querySelector("#educationExperienceList");
 
 const workListLink = document.createElement("a");
 workListLink.href = "#work-experiences";
@@ -155,6 +166,98 @@ async function requestAiPermission(settings) {
   return chrome.permissions.request({ origins: [origin] });
 }
 
+function createEducationCard(education = {}) {
+  const card = document.createElement("article");
+  card.className = "experience-card education-card";
+  const fields = [
+    ["school", "学校", "text"],
+    ["major", "专业", "text"],
+    ["degree", "学历/学位", "text"],
+    ["startDate", "开始日期", "date"],
+    ["endDate", "结束日期", "date"]
+  ];
+  const grid = document.createElement("div");
+  grid.className = "experience-grid";
+  for (const [key, labelText, type] of fields) {
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    const label = document.createElement("label");
+    label.textContent = labelText;
+    const input = document.createElement("input");
+    input.type = type;
+    input.dataset.educationField = key;
+    input.value = education[key] || "";
+    wrap.append(label, input);
+    grid.append(wrap);
+  }
+  const descriptionWrap = document.createElement("div");
+  descriptionWrap.className = "field wide";
+  const descriptionLabel = document.createElement("label");
+  descriptionLabel.textContent = "课程/研究方向";
+  const description = document.createElement("textarea");
+  description.dataset.educationField = "description";
+  description.value = education.description || "";
+  descriptionWrap.append(descriptionLabel, description);
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger-button education-remove";
+  remove.textContent = "删除此段";
+  remove.addEventListener("click", () => card.remove());
+  card.append(grid, descriptionWrap, remove);
+  return card;
+}
+
+function renderEducationExperiences() {
+  educationExperienceList.replaceChildren();
+  if (!educationExperiences.length) {
+    const empty = document.createElement("p");
+    empty.className = "learned-empty education-empty";
+    empty.textContent = "还没有结构化教育经历。上传简历解析或点击“添加一段”。";
+    educationExperienceList.append(empty);
+    return;
+  }
+  educationExperiences.forEach((education) => educationExperienceList.append(createEducationCard(education)));
+}
+
+function collectEducationExperiences() {
+  return Array.from(educationExperienceList.querySelectorAll(".education-card")).map((card) => {
+    const value = (key) => card.querySelector(`[data-education-field="${key}"]`).value.trim();
+    return {
+      school: value("school"),
+      major: value("major"),
+      degree: value("degree"),
+      startDate: value("startDate"),
+      endDate: value("endDate"),
+      ongoing: !value("endDate"),
+      description: value("description")
+    };
+  }).filter((education) => education.school || education.major || education.degree);
+}
+
+function syncLatestEducation(clearWhenEmpty = false) {
+  const latest = educationExperiences[0];
+  if (!latest) {
+    if (clearWhenEmpty) {
+      for (const key of ["school", "degree", "major", "educationStart", "educationEnd"]) form.elements[key].value = "";
+    }
+    return;
+  }
+  form.elements.school.value = latest.school || "";
+  form.elements.degree.value = latest.degree || "";
+  form.elements.major.value = latest.major || "";
+  form.elements.educationStart.value = latest.startDate || "";
+  form.elements.educationEnd.value = latest.endDate || "";
+}
+
+function mergeEducationExperiences(incoming) {
+  const unique = new Map();
+  for (const education of [...incoming, ...educationExperiences]) {
+    const key = `${education.school}|${education.major}|${education.degree}|${education.startDate}`.toLocaleLowerCase();
+    if (!unique.has(key)) unique.set(key, education);
+  }
+  return Array.from(unique.values()).sort((left, right) => Number(Boolean(right.ongoing)) - Number(Boolean(left.ongoing)) || String(right.startDate || "").localeCompare(String(left.startDate || "")));
+}
+
 function createExperienceCard(experience = {}) {
   const card = document.createElement("article");
   card.className = "experience-card";
@@ -250,10 +353,13 @@ function showParsePreview(result, fileName) {
   const dialog = document.querySelector("#parseDialog");
   const container = document.querySelector("#parseResults");
   const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+  const legacyEducationKeys = new Set(["school", "degree", "major", "educationStart", "educationEnd"]);
   pendingParse = result;
-  const entries = catalog.fields.filter((field) => String(result.profile?.[field.key] || "").trim() && !(result.workExperiences?.length && legacyWorkKeys.has(field.key)));
+  const entries = catalog.fields.filter((field) => String(result.profile?.[field.key] || "").trim()
+    && !(result.workExperiences?.length && legacyWorkKeys.has(field.key))
+    && !(result.educationExperiences?.length && legacyEducationKeys.has(field.key)));
   container.replaceChildren();
-  document.querySelector("#parseSummary").textContent = `文件：${fileName}。共识别 ${entries.length} 个基本字段和 ${result.workExperiences?.length || 0} 段工作经历；已有内容默认不覆盖。`;
+  document.querySelector("#parseSummary").textContent = `文件：${fileName}。共识别 ${entries.length} 个基本字段、${result.educationExperiences?.length || 0} 段教育经历和 ${result.workExperiences?.length || 0} 段工作经历；已有内容默认不覆盖。`;
 
   for (const field of entries) {
     const parsedValue = String(result.profile[field.key] || "");
@@ -291,6 +397,36 @@ function showParsePreview(result, fileName) {
     }
     container.append(row);
   }
+  if (result.educationExperiences?.length) {
+    const heading = document.createElement("h3");
+    heading.className = "parse-subheading";
+    heading.textContent = `教育经历（${result.educationExperiences.length} 段）`;
+    container.append(heading);
+    result.educationExperiences.forEach((education, index) => {
+      const card = document.createElement("article");
+      card.className = "parse-education-card";
+      card.dataset.educationIndex = index;
+      const select = document.createElement("input");
+      select.type = "checkbox";
+      select.className = "parse-education-check";
+      const duplicate = educationExperiences.some((existing) => existing.school === education.school && existing.major === education.major && existing.startDate === education.startDate);
+      select.checked = !duplicate;
+      select.setAttribute("aria-label", `应用教育经历 ${education.school} ${education.major}`);
+      const content = document.createElement("div");
+      content.className = "parse-education-content";
+      const title = document.createElement("strong");
+      title.textContent = `${education.school} · ${education.major}（${education.degree || "学历待确认"}）`;
+      const dates = document.createElement("span");
+      dates.className = "parse-education-dates";
+      dates.textContent = `${education.startDate || "?"} 至 ${education.endDate || "至今"}`;
+      const description = document.createElement("textarea");
+      description.className = "parse-education-description";
+      description.value = education.description || "";
+      content.append(title, dates, description);
+      card.append(select, content);
+      container.append(card);
+    });
+  }
   if (result.workExperiences?.length) {
     const heading = document.createElement("h3");
     heading.className = "parse-subheading";
@@ -321,7 +457,7 @@ function showParsePreview(result, fileName) {
       container.append(card);
     });
   }
-  if (!entries.length && !result.workExperiences?.length) {
+  if (!entries.length && !result.educationExperiences?.length && !result.workExperiences?.length) {
     const empty = document.createElement("p");
     empty.className = "learned-empty";
     empty.textContent = "已提取到文字，但没有识别出可写入的字段。可以尝试使用带清晰字段标签的简历版本。";
@@ -355,6 +491,15 @@ async function applyParsedValues() {
     form.elements[row.dataset.key].value = value;
     applied += 1;
   }
+  const selectedEducations = Array.from(document.querySelectorAll("#parseResults .parse-education-card")).filter((card) => card.querySelector(".parse-education-check").checked).map((card) => {
+    const source = pendingParse.educationExperiences[Number(card.dataset.educationIndex)];
+    return { ...source, description: card.querySelector(".parse-education-description").value.trim() };
+  });
+  if (selectedEducations.length) {
+    educationExperiences = mergeEducationExperiences(selectedEducations);
+    renderEducationExperiences();
+    syncLatestEducation();
+  }
   const selectedExperiences = Array.from(document.querySelectorAll("#parseResults .parse-work-card")).filter((card) => card.querySelector(".parse-work-check").checked).map((card) => {
     const source = pendingParse.workExperiences[Number(card.dataset.experienceIndex)];
     return { ...source, description: card.querySelector(".parse-work-description").value.trim() };
@@ -364,22 +509,27 @@ async function applyParsedValues() {
     renderWorkExperiences();
     syncLatestExperience();
   }
-  if (!applied && !selectedExperiences.length) {
+  if (!applied && !selectedEducations.length && !selectedExperiences.length) {
     showToast("没有选择要应用的字段");
     return;
   }
   await save();
   document.querySelector("#parseDialog").close();
-  showToast(`已保存 ${applied} 个字段和 ${selectedExperiences.length} 段工作经历`);
+  showToast(`已保存 ${applied} 个字段、${selectedEducations.length} 段教育经历和 ${selectedExperiences.length} 段工作经历`);
 }
 
 async function load() {
-  const stored = await chrome.storage.local.get(["profile", "learnedAnswers", "workExperiences", "aiSettings"]);
+  const stored = await chrome.storage.local.get(["profile", "learnedAnswers", "educationExperiences", "workExperiences", "aiSettings"]);
   const profile = stored.profile || {};
   learnedAnswers = stored.learnedAnswers || {};
+  educationExperiences = stored.educationExperiences || [];
   workExperiences = stored.workExperiences || [];
   aiSettings = globalThis.ResumeAiAgent.normalizeSettings(stored.aiSettings);
   for (const field of catalog.fields) form.elements[field.key].value = profile[field.key] || "";
+  if (!educationExperiences.length && (profile.school || profile.major || profile.degree)) {
+    educationExperiences = [{ school: profile.school || "", major: profile.major || "", degree: profile.degree || "", startDate: profile.educationStart || "", endDate: profile.educationEnd || "", ongoing: !profile.educationEnd, description: "" }];
+  }
+  renderEducationExperiences();
   renderWorkExperiences();
   renderLearnedAnswers();
   renderAiSettings();
@@ -387,6 +537,9 @@ async function load() {
 
 async function save({ requestPermission = false } = {}) {
   learnedAnswers = learnedValues();
+  const hadStructuredEducation = educationExperiences.length > 0;
+  educationExperiences = collectEducationExperiences();
+  syncLatestEducation(hadStructuredEducation);
   const hadStructuredExperiences = workExperiences.length > 0;
   workExperiences = collectWorkExperiences();
   syncLatestExperience(hadStructuredExperiences);
@@ -399,13 +552,13 @@ async function save({ requestPermission = false } = {}) {
     showToast("未授予 AI 接口访问权限，Agent 尚未启用");
     return false;
   }
-  await chrome.storage.local.set({ profile: values(), learnedAnswers, workExperiences, aiSettings });
+  await chrome.storage.local.set({ profile: values(), learnedAnswers, educationExperiences, workExperiences, aiSettings });
   showToast("资料已保存在本机");
   return true;
 }
 
 function downloadJson() {
-  const blob = new Blob([JSON.stringify({ version: 3, profile: values(), workExperiences: collectWorkExperiences(), learnedAnswers: learnedValues() }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ version: 4, profile: values(), educationExperiences: collectEducationExperiences(), workExperiences: collectWorkExperiences(), learnedAnswers: learnedValues() }, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -418,8 +571,14 @@ async function importJson(file) {
   const data = JSON.parse(await file.text());
   const profile = data.profile || data;
   learnedAnswers = data.learnedAnswers || {};
+  educationExperiences = data.educationExperiences || [];
   workExperiences = data.workExperiences || [];
   for (const field of catalog.fields) form.elements[field.key].value = String(profile[field.key] || "");
+  if (!educationExperiences.length && (profile.school || profile.major || profile.degree)) {
+    educationExperiences = [{ school: profile.school || "", major: profile.major || "", degree: profile.degree || "", startDate: profile.educationStart || "", endDate: profile.educationEnd || "", ongoing: !profile.educationEnd, description: "" }];
+  }
+  renderEducationExperiences();
+  syncLatestEducation();
   renderWorkExperiences();
   syncLatestExperience();
   renderLearnedAnswers();
@@ -451,6 +610,10 @@ form.addEventListener("submit", async (event) => {
 document.querySelector("#applyParsed").addEventListener("click", applyParsedValues);
 document.querySelector("#cancelParse").addEventListener("click", () => document.querySelector("#parseDialog").close());
 document.querySelector("#closeParseDialog").addEventListener("click", () => document.querySelector("#parseDialog").close());
+document.querySelector("#addEducationExperience").addEventListener("click", () => {
+  educationExperienceList.querySelector(".education-empty")?.remove();
+  educationExperienceList.prepend(createEducationCard());
+});
 document.querySelector("#addWorkExperience").addEventListener("click", () => {
   workExperienceList.querySelector(".work-empty")?.remove();
   workExperienceList.prepend(createExperienceCard());
