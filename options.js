@@ -8,6 +8,7 @@ const groups = [...new Set(catalog.fields.map((field) => field.group))];
 let learnedAnswers = {};
 let workExperiences = [];
 let pendingParse = null;
+let aiSettings = { ...globalThis.ResumeAiAgent.DEFAULT_SETTINGS };
 
 function slug(value) {
   return Array.from(value).map((char) => char.codePointAt(0).toString(16)).join("-");
@@ -45,6 +46,28 @@ workListSection.id = "work-experiences";
 workListSection.innerHTML = '<div class="section-title-row"><div><h2>全部工作经历</h2><p class="hint">按最近到最早排列；第一段会同步到上方“最近工作经历”字段。</p></div><button id="addWorkExperience" class="inline-button" type="button">添加一段</button></div><div id="workExperienceList"></div>';
 form.append(workListSection);
 const workExperienceList = workListSection.querySelector("#workExperienceList");
+
+const aiLink = document.createElement("a");
+aiLink.href = "#ai-agent";
+aiLink.textContent = "AI Agent";
+navigation.append(aiLink);
+const aiSection = document.createElement("section");
+aiSection.id = "ai-agent";
+aiSection.innerHTML = `
+  <div class="section-title-row">
+    <div>
+      <h2>AI Agent 字段识别</h2>
+      <p class="hint">可选功能。模型只接收网页字段结构和资料字段名称，不接收姓名、电话、邮箱或经历正文；返回结果必须在本地预览后才能填写。</p>
+    </div>
+    <label class="switch-label"><input id="aiEnabled" type="checkbox"> 启用</label>
+  </div>
+  <div class="fields">
+    <div class="field wide"><label for="aiEndpoint">OpenAI 兼容接口地址</label><input id="aiEndpoint" type="url" autocomplete="off"></div>
+    <div class="field"><label for="aiModel">模型</label><input id="aiModel" type="text" autocomplete="off"></div>
+    <div class="field"><label for="aiApiKey">API Key（仅保存在本机）</label><input id="aiApiKey" type="password" autocomplete="off"></div>
+  </div>
+  <div class="ai-notice">默认使用 DeepSeek Chat Completions 接口。保存时浏览器只会请求该接口域名的访问权限；招聘网站内容不会自动发送。</div>`;
+form.append(aiSection);
 
 const learnedLink = document.createElement("a");
 learnedLink.href = "#learned-answers";
@@ -106,6 +129,30 @@ function learnedValues() {
     result[row.dataset.key] = { ...previous, value, updatedAt: new Date().toISOString() };
   }
   return result;
+}
+
+function collectAiSettings() {
+  return globalThis.ResumeAiAgent.normalizeSettings({
+    enabled: document.querySelector("#aiEnabled").checked,
+    endpoint: document.querySelector("#aiEndpoint").value,
+    model: document.querySelector("#aiModel").value,
+    apiKey: document.querySelector("#aiApiKey").value
+  });
+}
+
+function renderAiSettings() {
+  const normalized = globalThis.ResumeAiAgent.normalizeSettings(aiSettings);
+  document.querySelector("#aiEnabled").checked = normalized.enabled;
+  document.querySelector("#aiEndpoint").value = normalized.endpoint;
+  document.querySelector("#aiModel").value = normalized.model;
+  document.querySelector("#aiApiKey").value = normalized.apiKey;
+}
+
+async function requestAiPermission(settings) {
+  if (!settings.enabled) return true;
+  const origin = globalThis.ResumeAiAgent.endpointOriginPattern(settings.endpoint);
+  if (!chrome.permissions?.request) return true;
+  return chrome.permissions.request({ origins: [origin] });
 }
 
 function createExperienceCard(experience = {}) {
@@ -327,22 +374,34 @@ async function applyParsedValues() {
 }
 
 async function load() {
-  const stored = await chrome.storage.local.get(["profile", "learnedAnswers", "workExperiences"]);
+  const stored = await chrome.storage.local.get(["profile", "learnedAnswers", "workExperiences", "aiSettings"]);
   const profile = stored.profile || {};
   learnedAnswers = stored.learnedAnswers || {};
   workExperiences = stored.workExperiences || [];
+  aiSettings = globalThis.ResumeAiAgent.normalizeSettings(stored.aiSettings);
   for (const field of catalog.fields) form.elements[field.key].value = profile[field.key] || "";
   renderWorkExperiences();
   renderLearnedAnswers();
+  renderAiSettings();
 }
 
-async function save() {
+async function save({ requestPermission = false } = {}) {
   learnedAnswers = learnedValues();
   const hadStructuredExperiences = workExperiences.length > 0;
   workExperiences = collectWorkExperiences();
   syncLatestExperience(hadStructuredExperiences);
-  await chrome.storage.local.set({ profile: values(), learnedAnswers, workExperiences });
+  aiSettings = collectAiSettings();
+  if (requestPermission && aiSettings.enabled && !aiSettings.apiKey) {
+    showToast("请先填写 AI API Key");
+    return false;
+  }
+  if (requestPermission && aiSettings.enabled && !(await requestAiPermission(aiSettings))) {
+    showToast("未授予 AI 接口访问权限，Agent 尚未启用");
+    return false;
+  }
+  await chrome.storage.local.set({ profile: values(), learnedAnswers, workExperiences, aiSettings });
   showToast("资料已保存在本机");
+  return true;
 }
 
 function downloadJson() {
@@ -368,7 +427,10 @@ async function importJson(file) {
   showToast("备份已导入并保存");
 }
 
-document.querySelector("#saveButton").addEventListener("click", save);
+document.querySelector("#saveButton").addEventListener("click", async () => {
+  try { await save({ requestPermission: true }); }
+  catch (error) { showToast(`保存失败：${error.message}`); }
+});
 document.querySelector("#exportButton").addEventListener("click", downloadJson);
 document.querySelector("#parseResumeButton").addEventListener("click", () => document.querySelector("#resumeFile").click());
 document.querySelector("#resumeFile").addEventListener("change", async (event) => {
@@ -381,7 +443,11 @@ document.querySelector("#importFile").addEventListener("change", async (event) =
   catch (error) { showToast(`导入失败：${error.message}`); }
   event.target.value = "";
 });
-form.addEventListener("submit", (event) => { event.preventDefault(); save(); });
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try { await save({ requestPermission: true }); }
+  catch (error) { showToast(`保存失败：${error.message}`); }
+});
 document.querySelector("#applyParsed").addEventListener("click", applyParsedValues);
 document.querySelector("#cancelParse").addEventListener("click", () => document.querySelector("#parseDialog").close());
 document.querySelector("#closeParseDialog").addEventListener("click", () => document.querySelector("#parseDialog").close());

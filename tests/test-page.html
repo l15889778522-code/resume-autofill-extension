@@ -13,6 +13,31 @@
     <label for="title-1">职位名称</label><input id="title-1">
     <label for="company-2">公司名称</label><input id="company-2">
     <label for="title-2">职位名称</label><input id="title-2">
+    <section>
+      <h2>求职偏好</h2>
+      <label id="employment-label">雇佣类型</label>
+      <button id="employment" type="button" role="combobox" aria-labelledby="employment-label" aria-controls="employment-options" aria-expanded="false">请选择</button>
+      <div id="employment-options" role="listbox" hidden>
+        <button type="button" role="option" data-value="full-time">全职</button>
+        <button type="button" role="option" data-value="internship">实习</button>
+      </div>
+    </section>
   </form>
+  <script>
+    const employment = document.querySelector("#employment");
+    const employmentOptions = document.querySelector("#employment-options");
+    employment.addEventListener("click", () => {
+      employmentOptions.hidden = false;
+      employment.setAttribute("aria-expanded", "true");
+    });
+    employmentOptions.addEventListener("click", (event) => {
+      const option = event.target.closest('[role="option"]');
+      if (!option) return;
+      employment.textContent = option.textContent;
+      employment.setAttribute("aria-valuetext", option.textContent);
+      employment.setAttribute("aria-expanded", "false");
+      employmentOptions.hidden = true;
+    });
+  </script>
 </body>
 </html>

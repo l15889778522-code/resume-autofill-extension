@@ -9,6 +9,8 @@ const state = {
   hostname: "",
   tabId: null,
   siteRules: {},
+  aiSettings: {},
+  pageContext: {},
   mode: "fill"
 };
 const elements = {
@@ -19,7 +21,8 @@ const elements = {
   fill: document.querySelector("#fill"),
   learnPage: document.querySelector("#learnPage"),
   selectAll: document.querySelector("#selectAll"),
-  rememberRules: document.querySelector("#rememberRules")
+  rememberRules: document.querySelector("#rememberRules"),
+  aiRecognize: document.querySelector("#aiRecognize")
 };
 
 function escapeHtml(value) {
@@ -50,6 +53,7 @@ async function ensureInjected() {
 
 function sourceFor(candidate) {
   if (candidate.preferredSourceRef && sourceDetails(candidate.preferredSourceRef).value) return candidate.preferredSourceRef;
+  if (candidate.agentSourceRef && sourceDetails(candidate.agentSourceRef).value) return candidate.agentSourceRef;
   const workFieldMap = {
     latestCompany: "company",
     latestJobTitle: "jobTitle",
@@ -106,6 +110,10 @@ function sourceOptions(selectedSource) {
 function confidenceBadge(candidate, source) {
   if (!source.value) return '<span class="confidence confidence-unknown">待匹配</span>';
   const confidence = Math.min(100, Number(candidate.confidence || candidate.score || 0));
+  if (candidate.matchMethod === "ai") {
+    if (confidence >= 85) return `<span class="confidence confidence-ai">AI ${confidence}%</span>`;
+    return `<span class="confidence confidence-medium">AI 建议 ${confidence}%</span>`;
+  }
   if (confidence >= 88) return `<span class="confidence confidence-high">高置信 ${confidence}%</span>`;
   if (confidence >= 68) return `<span class="confidence confidence-medium">建议 ${confidence}%</span>`;
   return `<span class="confidence confidence-unknown">需确认</span>`;
@@ -128,7 +136,8 @@ function renderFill() {
     candidate.sourceRef = sourceFor(candidate);
     const source = sourceDetails(candidate.sourceRef);
     const confidence = Number(candidate.confidence || candidate.score || 0);
-    const checked = Boolean(source.value) && confidence >= 88 && !candidate.currentValue && !source.sensitive;
+    const threshold = candidate.matchMethod === "ai" ? 85 : 88;
+    const checked = Boolean(source.value) && confidence >= threshold && !candidate.currentValue && !source.sensitive;
     const article = document.createElement("article");
     article.className = "candidate";
     article.dataset.index = index;
@@ -138,6 +147,7 @@ function renderFill() {
         <div class="candidate-label" title="${escapeHtml(candidate.label)}">网页字段：${escapeHtml(candidate.label)}${confidenceBadge(candidate, source)}${source.sensitive ? '<span class="badge">敏感</span>' : ""}</div>
         <select class="field-map" aria-label="选择填写内容">${sourceOptions(candidate.sourceRef)}</select>
         <div class="candidate-value">将填入：${escapeHtml(source.value || "（请先选择内容）")}</div>
+        ${candidate.aiReason ? `<div class="agent-reason">Agent：${escapeHtml(candidate.aiReason)}</div>` : ""}
       </div>`;
     const select = article.querySelector(".field-map");
     select.addEventListener("change", () => {
@@ -215,11 +225,12 @@ async function scan() {
   try {
     setStatus("正在扫描当前页面…");
     await initializeTab();
-    const stored = await chrome.storage.local.get(["profile", "siteRules", "learnedAnswers", "workExperiences"]);
+    const stored = await chrome.storage.local.get(["profile", "siteRules", "learnedAnswers", "workExperiences", "aiSettings"]);
     state.profile = stored.profile || {};
     state.siteRules = stored.siteRules || {};
     state.learnedAnswers = stored.learnedAnswers || {};
     state.workExperiences = stored.workExperiences || [];
+    state.aiSettings = globalThis.ResumeAiAgent.normalizeSettings(stored.aiSettings);
     const response = await sendMessage({
       type: "RESUME_SCAN",
       profile: state.profile,
@@ -228,10 +239,72 @@ async function scan() {
     });
     if (!response?.ok) throw new Error(response?.error || "扫描失败");
     state.candidates = response.candidates || [];
+    state.pageContext = { hostname: state.hostname, language: response.pageContext?.language || "" };
+    elements.aiRecognize.disabled = false;
+    elements.aiRecognize.title = state.aiSettings.enabled && state.aiSettings.apiKey ? "让 AI Agent 理解低置信和未知字段" : "点击查看 AI Agent 配置提示";
     renderFill();
   } catch (error) {
     const internalPage = /Cannot access|chrome:\/\/|edge:\/\/|extensions/i.test(error.message);
     setStatus(internalPage ? "浏览器内部页面不允许扩展填写。请打开招聘网站的简历编辑页。" : `扫描失败：${error.message}`, true);
+  }
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message));
+      else resolve(response);
+    });
+  });
+}
+
+async function ensureAiPermission() {
+  const origin = globalThis.ResumeAiAgent.endpointOriginPattern(state.aiSettings.endpoint);
+  if (!chrome.permissions?.request) return true;
+  return chrome.permissions.request({ origins: [origin] });
+}
+
+async function recognizeWithAi() {
+  try {
+    if (!state.aiSettings.enabled || !state.aiSettings.apiKey) {
+      setStatus("请先在资料库的“AI Agent”中启用服务并填写 API Key。", true);
+      return;
+    }
+    if (!(await ensureAiPermission())) {
+      setStatus("未授予 AI 接口访问权限，已保留本地匹配结果。", true);
+      return;
+    }
+    const sources = globalThis.ResumeAiAgent.sourceCatalog(catalog, state.profile, state.workExperiences, state.learnedAnswers);
+    const eligible = state.candidates.filter((candidate) => !candidate.currentValue && Number(candidate.confidence || 0) < 110);
+    if (!eligible.length || !sources.length) {
+      setStatus("当前页面没有需要 Agent 重新判断的空字段。", false);
+      return;
+    }
+    elements.aiRecognize.disabled = true;
+    elements.aiRecognize.textContent = "AI 分析中…";
+    const response = await sendRuntimeMessage({ type: "AI_PLAN_MAPPINGS", candidates: eligible, sources, pageContext: state.pageContext });
+    if (!response?.ok) throw new Error(response?.error || "AI 识别失败");
+    let applied = 0;
+    for (const assignment of response.assignments || []) {
+      const candidate = state.candidates.find((item) => item.elementId === assignment.elementId);
+      if (!candidate || assignment.confidence < 55 || !sourceDetails(assignment.sourceRef).value) continue;
+      const currentConfidence = Number(candidate.confidence || 0);
+      const currentSource = sourceFor(candidate);
+      if (currentSource && currentConfidence >= 88 && currentSource !== assignment.sourceRef && assignment.confidence < currentConfidence) continue;
+      candidate.agentSourceRef = assignment.sourceRef;
+      candidate.confidence = assignment.confidence;
+      candidate.matchMethod = "ai";
+      candidate.aiReason = assignment.reason;
+      applied += 1;
+    }
+    renderFill();
+    elements.aiRecognize.textContent = applied ? `AI 已匹配 ${applied} 项` : "AI 无可靠建议";
+  } catch (error) {
+    setStatus(`AI 识别失败：${error.message}。本地匹配结果仍可使用。`, true);
+  } finally {
+    elements.aiRecognize.disabled = false;
+    if (/分析中/.test(elements.aiRecognize.textContent)) elements.aiRecognize.textContent = "AI 识别";
   }
 }
 
@@ -325,6 +398,7 @@ async function primaryAction() {
 
 document.querySelector("#openOptions").addEventListener("click", () => chrome.runtime.openOptionsPage());
 document.querySelector("#rescan").addEventListener("click", scan);
+elements.aiRecognize.addEventListener("click", recognizeWithAi);
 elements.learnPage.addEventListener("click", capturePage);
 elements.fill.addEventListener("click", primaryAction);
 elements.selectAll.addEventListener("change", () => {

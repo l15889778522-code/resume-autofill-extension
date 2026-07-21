@@ -33,7 +33,7 @@ const scanned = await page.evaluate((profileData) => new Promise((resolve) => {
 }), profile);
 
 assert.equal(scanned.ok, true);
-assert.equal(scanned.candidates.length, 10);
+assert.equal(scanned.candidates.length, 11);
 assert.equal(scanned.candidates.find((item) => item.label === "姓名").matchedKey, "fullName");
 assert.equal(scanned.candidates.find((item) => item.label === "站点专用问题").matchedKey, "");
 const fuzzyCity = scanned.candidates.find((item) => item.label === "期望城巿");
@@ -43,6 +43,9 @@ const companyCandidates = scanned.candidates.filter((item) => item.matchedKey ==
 const titleCandidates = scanned.candidates.filter((item) => item.matchedKey === "latestJobTitle");
 assert.deepEqual(companyCandidates.map((item) => item.repeatIndex), [0, 1]);
 assert.deepEqual(titleCandidates.map((item) => item.repeatIndex), [0, 1]);
+const employmentCandidate = scanned.candidates.find((item) => item.label === "雇佣类型");
+assert.equal(employmentCandidate.section, "求职偏好");
+assert.deepEqual(employmentCandidate.options, ["全职", "实习"]);
 const preferredScan = await page.evaluate(({ profileData, signature }) => new Promise((resolve) => {
   globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, learnedAnswers: {}, siteRules: { [signature]: "experience:1:company" } }, {}, resolve);
 }), { profileData: profile, signature: companyCandidates[0].signature });
@@ -61,6 +64,12 @@ assert.equal(await page.locator("#name").inputValue(), "张三");
 assert.equal(await page.locator("#phone").inputValue(), "13800000000");
 assert.equal(await page.locator("#degree").inputValue(), "bachelor");
 assert.equal(await page.locator("#email").inputValue(), "existing@example.com");
+
+const customSelectFill = await page.evaluate((selection) => new Promise((resolve) => {
+  globalThis.__testMessageListener({ type: "RESUME_FILL", selections: [selection] }, {}, resolve);
+}), { ...employmentCandidate, value: "全职" });
+assert.equal(customSelectFill.filled, 1);
+assert.equal(await page.locator("#employment").textContent(), "全职");
 
 await page.locator("#custom").fill("接受偶尔出差");
 const captured = await page.evaluate((profileData) => new Promise((resolve) => {

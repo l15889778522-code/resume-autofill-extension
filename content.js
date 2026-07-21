@@ -10,7 +10,8 @@
     "input:not([type=hidden]):not([type=password]):not([type=file]):not([type=submit]):not([type=button]):not([type=reset])",
     "textarea",
     "select",
-    "[contenteditable=true]"
+    "[contenteditable=true]",
+    "[role=combobox]"
   ].join(",");
 
   function normalize(value) {
@@ -104,6 +105,43 @@
     };
   }
 
+  function sectionFor(element) {
+    const parts = [];
+    const fieldset = element.closest("fieldset");
+    if (fieldset) parts.push(textOf(fieldset.querySelector("legend")));
+    const container = element.closest("section, article, [role=group], .form-section, .form-group, .form-item, .ant-form-item, .el-form-item");
+    if (container) {
+      const heading = container.querySelector("h1, h2, h3, h4, [role=heading], .section-title, .form-title");
+      if (heading && !heading.contains(element)) parts.push(textOf(heading));
+    }
+    let cursor = element.parentElement;
+    let foundHeading = false;
+    for (let depth = 0; cursor && depth < 4; depth += 1, cursor = cursor.parentElement) {
+      let sibling = cursor.previousElementSibling;
+      while (sibling) {
+        if (/^H[1-4]$/.test(sibling.tagName) || sibling.getAttribute("role") === "heading") {
+          parts.push(textOf(sibling));
+          foundHeading = true;
+          break;
+        }
+        sibling = sibling.previousElementSibling;
+      }
+      if (foundHeading) break;
+    }
+    return [...new Set(parts.filter((part) => part && part.length <= 100))].join(" · ").slice(0, 180);
+  }
+
+  function optionsFor(element) {
+    if (element instanceof HTMLSelectElement) return Array.from(element.options).map((option) => option.text.trim()).filter(Boolean).slice(0, 80);
+    if (element.type === "radio") {
+      const group = element.name ? Array.from(document.querySelectorAll(`input[type=radio][name="${CSS.escape(element.name)}"]`)) : [element];
+      return group.map((item) => labelFor(item) || item.value).filter(Boolean).slice(0, 80);
+    }
+    const controlledId = element.getAttribute("aria-controls") || element.getAttribute("aria-owns");
+    const controlled = controlledId ? document.getElementById(controlledId) : null;
+    return controlled ? Array.from(controlled.querySelectorAll('[role="option"]')).map(textOf).filter(Boolean).slice(0, 80) : [];
+  }
+
   function scoreAlias(descriptor, alias) {
     const needle = normalize(alias);
     if (!needle) return 0;
@@ -177,6 +215,10 @@
     }
     if (element.type === "checkbox") return element.checked ? element.value : "";
     if (element.isContentEditable) return textOf(element);
+    if (element.getAttribute("role") === "combobox" && !("value" in element)) {
+      const value = element.getAttribute("aria-valuetext") || textOf(element);
+      return /^(请选择|选择|select|please select)$/i.test(String(value).trim()) ? "" : value;
+    }
     return element.value || "";
   }
 
@@ -243,8 +285,11 @@
         elementId,
         signature: fieldSignature,
         label: descriptor.label || descriptor.aria || descriptor.placeholder || descriptor.name || descriptor.id || "未命名字段",
+        section: sectionFor(element),
         tag: element.tagName.toLowerCase(),
         inputType: element.getAttribute("type") || "",
+        required: element.required || element.getAttribute("aria-required") === "true",
+        options: optionsFor(element),
         questionKey: naturalQuestionKey,
         matchedKey: profileValue ? match.key : "",
         learnedKey: profileValue ? "" : learnedKey,
@@ -335,9 +380,40 @@
     return true;
   }
 
-  function fillOne(element, value) {
+  function wait(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+
+  async function fillCombobox(element, value) {
+    const wanted = variants(value);
+    element.focus();
+    element.click();
+    await wait(120);
+    const controlledId = element.getAttribute("aria-controls") || element.getAttribute("aria-owns");
+    const controlled = controlledId ? document.getElementById(controlledId) : null;
+    const optionRoot = controlled || document;
+    const options = Array.from(optionRoot.querySelectorAll('[role="option"]')).filter((option) => {
+      const style = getComputedStyle(option);
+      const box = option.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 1 && box.height > 1;
+    });
+    const choice = options.find((option) => wanted.has(normalize(option.getAttribute("data-value"))) || wanted.has(normalize(textOf(option)))) ||
+      options.find((option) => Array.from(wanted).some((token) => normalize(textOf(option)).includes(token)));
+    if (choice) {
+      choice.click();
+      return true;
+    }
+    if (element instanceof HTMLInputElement) {
+      nativeSetValue(element, value);
+      return true;
+    }
+    return false;
+  }
+
+  async function fillOne(element, value) {
     let changed = false;
-    if (element instanceof HTMLSelectElement) changed = fillSelect(element, value);
+    if (element.getAttribute("role") === "combobox" && !(element instanceof HTMLSelectElement)) changed = await fillCombobox(element, value);
+    else if (element instanceof HTMLSelectElement) changed = fillSelect(element, value);
     else if (element.type === "radio") changed = fillRadio(element, value);
     else if (element.isContentEditable) {
       element.focus();
@@ -361,12 +437,12 @@
     return changed;
   }
 
-  function fill(selections) {
+  async function fill(selections) {
     let filled = 0;
     const failed = [];
     for (const selection of selections) {
       const element = document.querySelector(`[${markerAttribute}="${CSS.escape(selection.elementId)}"]`);
-      if (!element || !visible(element) || !fillOne(element, String(selection.value || ""))) {
+      if (!element || !visible(element) || !(await fillOne(element, String(selection.value || "")))) {
         failed.push(selection.label || selection.key);
       } else {
         filled += 1;
@@ -376,9 +452,18 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "RESUME_FILL") {
+      fill(message.selections || [])
+        .then((result) => sendResponse({ ok: true, ...result }))
+        .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      return true;
+    }
     try {
-      if (message.type === "RESUME_SCAN") sendResponse({ ok: true, candidates: scan(message.profile, message.siteRules, message.learnedAnswers) });
-      else if (message.type === "RESUME_FILL") sendResponse({ ok: true, ...fill(message.selections || []) });
+      if (message.type === "RESUME_SCAN") sendResponse({
+        ok: true,
+        candidates: scan(message.profile, message.siteRules, message.learnedAnswers),
+        pageContext: { language: document.documentElement.lang || navigator.language || "" }
+      });
       else if (message.type === "RESUME_CAPTURE") sendResponse({ ok: true, captured: capture(message.profile || {}) });
     } catch (error) {
       sendResponse({ ok: false, error: error.message || String(error) });

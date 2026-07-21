@@ -1,0 +1,166 @@
+(function (root) {
+  "use strict";
+
+  const DEFAULT_SETTINGS = Object.freeze({
+    enabled: false,
+    endpoint: "https://api.deepseek.com/chat/completions",
+    model: "deepseek-v4-flash",
+    apiKey: ""
+  });
+
+  function cleanText(value, maximum = 180) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum);
+  }
+
+  function normalizeSettings(settings = {}) {
+    return {
+      enabled: Boolean(settings.enabled),
+      endpoint: cleanText(settings.endpoint || DEFAULT_SETTINGS.endpoint, 500),
+      model: cleanText(settings.model || DEFAULT_SETTINGS.model, 120),
+      apiKey: String(settings.apiKey || "").trim()
+    };
+  }
+
+  function endpointOriginPattern(endpoint) {
+    const parsed = new URL(endpoint);
+    if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error("AI 接口仅支持 HTTP/HTTPS 地址");
+    if (parsed.protocol === "http:" && !["localhost", "127.0.0.1"].includes(parsed.hostname)) {
+      throw new Error("非本机 AI 接口必须使用 HTTPS");
+    }
+    // Chrome match patterns do not include ports; a host permission covers all
+    // ports for the selected scheme and host (including local model servers).
+    return `${parsed.protocol}//${parsed.hostname}/*`;
+  }
+
+  function sourceCatalog(catalog, profile, workExperiences, learnedAnswers) {
+    const sources = [];
+    for (const field of catalog.fields || []) {
+      if (!String(profile?.[field.key] || "").trim()) continue;
+      sources.push({ sourceRef: `profile:${field.key}`, label: field.label, group: field.group, type: field.type || "text", sensitive: Boolean(field.sensitive) });
+    }
+    const experienceLabels = { company: "公司/单位", jobTitle: "职位", startDate: "开始日期", endDate: "结束日期", description: "工作描述" };
+    (workExperiences || []).forEach((experience, index) => {
+      for (const [key, label] of Object.entries(experienceLabels)) {
+        if (!String(experience?.[key] || "").trim()) continue;
+        sources.push({ sourceRef: `experience:${index}:${key}`, label: `工作经历 ${index + 1} · ${label}`, group: `工作经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false });
+      }
+    });
+    for (const [key, answer] of Object.entries(learnedAnswers || {})) {
+      if (!String(answer?.value || "").trim()) continue;
+      sources.push({ sourceRef: `learned:${key}`, label: cleanText(answer.label || key), group: "已学习答案", type: "text", sensitive: Boolean(answer.sensitive) });
+    }
+    return sources;
+  }
+
+  function safeCandidate(candidate) {
+    return {
+      elementId: cleanText(candidate.elementId, 80),
+      label: cleanText(candidate.label),
+      section: cleanText(candidate.section),
+      tag: cleanText(candidate.tag, 30),
+      inputType: cleanText(candidate.inputType, 30),
+      required: Boolean(candidate.required),
+      hasCurrentValue: Boolean(candidate.currentValue),
+      options: Array.isArray(candidate.options) ? candidate.options.map((option) => cleanText(option, 100)).filter(Boolean).slice(0, 80) : [],
+      localSuggestion: cleanText(candidate.sourceRef || candidate.preferredSourceRef, 180),
+      localConfidence: Math.max(0, Math.min(100, Number(candidate.confidence || 0)))
+    };
+  }
+
+  function buildPrompt(candidates, sources, pageContext = {}) {
+    return {
+      page: {
+        hostname: cleanText(pageContext.hostname, 180),
+        language: cleanText(pageContext.language, 30)
+      },
+      fields: (candidates || []).map(safeCandidate).filter((candidate) => candidate.elementId && candidate.label),
+      allowedSources: (sources || []).map((source) => ({
+        sourceRef: cleanText(source.sourceRef, 180),
+        label: cleanText(source.label),
+        group: cleanText(source.group, 100),
+        type: cleanText(source.type, 30),
+        sensitive: Boolean(source.sensitive)
+      }))
+    };
+  }
+
+  function parseJsonContent(content) {
+    const raw = String(content || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    if (!raw) throw new Error("AI 没有返回字段规划");
+    return JSON.parse(raw);
+  }
+
+  function validatePlan(plan, candidates, sources) {
+    const allowedElements = new Set((candidates || []).map((candidate) => candidate.elementId));
+    const allowedSources = new Set((sources || []).map((source) => source.sourceRef));
+    const seen = new Set();
+    const assignments = [];
+    for (const item of Array.isArray(plan?.assignments) ? plan.assignments : []) {
+      const elementId = cleanText(item?.elementId, 80);
+      const sourceRef = cleanText(item?.sourceRef, 180);
+      if (!allowedElements.has(elementId) || !allowedSources.has(sourceRef) || seen.has(elementId)) continue;
+      seen.add(elementId);
+      assignments.push({
+        elementId,
+        sourceRef,
+        confidence: Math.max(0, Math.min(100, Math.round(Number(item.confidence) || 0))),
+        reason: cleanText(item.reason, 160)
+      });
+    }
+    return assignments;
+  }
+
+  async function planMappings({ settings, candidates, sources, pageContext, fetchImpl = fetch }) {
+    const config = normalizeSettings(settings);
+    if (!config.enabled) throw new Error("请先在资料库启用 AI Agent");
+    if (!config.apiKey) throw new Error("请先在资料库填写 AI API Key");
+    if (!config.endpoint || !config.model) throw new Error("AI 接口地址和模型不能为空");
+    endpointOriginPattern(config.endpoint);
+    const prompt = buildPrompt(candidates, sources, pageContext);
+    if (!prompt.fields.length || !prompt.allowedSources.length) return [];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    let response;
+    try {
+      response = await fetchImpl(config.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${config.apiKey}` },
+        body: JSON.stringify({
+          model: config.model,
+          temperature: 0,
+          max_tokens: 2400,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: "你是招聘网申表单映射 Agent。根据网页字段的标签、所属区块、控件类型和选项，从 allowedSources 中选择最符合的 sourceRef。必须区分现居城市与期望城市、学历与学位、教育经历与工作经历，并按重复区块顺序匹配多段经历。不得编造值、字段或 sourceRef；不确定时省略。已有值的字段不要映射。只返回 JSON 对象：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"简短理由\"}]}。"
+            },
+            { role: "user", content: JSON.stringify(prompt) }
+          ]
+        }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") throw new Error("AI 请求超时，请检查网络或接口地址");
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(cleanText(data?.error?.message || `AI 接口返回 ${response.status}`, 240));
+    const content = data?.choices?.[0]?.message?.content;
+    const plan = parseJsonContent(content);
+    return validatePlan(plan, candidates, sources);
+  }
+
+  root.ResumeAiAgent = {
+    DEFAULT_SETTINGS,
+    normalizeSettings,
+    endpointOriginPattern,
+    sourceCatalog,
+    buildPrompt,
+    parseJsonContent,
+    validatePlan,
+    planMappings
+  };
+})(typeof globalThis !== "undefined" ? globalThis : self);

@@ -87,6 +87,41 @@ assert.equal(pdfResult.profile.fullName, "Alice Chen");
 assert.equal(pdfResult.profile.email, "alice@example.com");
 assert.equal(pdfResult.profile.phone, "13800000000");
 
+const settingsContext = await browser.newContext();
+await settingsContext.addInitScript(() => {
+  globalThis.__storageData = {};
+  globalThis.__requestedOrigins = [];
+  globalThis.chrome = {
+    runtime: { getURL(relativePath) { return new URL(`/${relativePath}`, location.origin).href; } },
+    permissions: {
+      async contains() { return false; },
+      async request(request) { globalThis.__requestedOrigins = request.origins || []; return true; }
+    },
+    storage: {
+      local: {
+        async get(keys) {
+          const requested = Array.isArray(keys) ? keys : [keys];
+          return Object.fromEntries(requested.filter((key) => key in globalThis.__storageData).map((key) => [key, globalThis.__storageData[key]]));
+        },
+        async set(values) { Object.assign(globalThis.__storageData, values); }
+      }
+    }
+  };
+});
+const settingsPage = await settingsContext.newPage();
+await settingsPage.goto(`http://127.0.0.1:${port}/options.html`);
+assert.equal(await settingsPage.locator("#aiEndpoint").inputValue(), "https://api.deepseek.com/chat/completions");
+assert.equal(await settingsPage.locator("#aiModel").inputValue(), "deepseek-v4-flash");
+await settingsPage.locator("#aiEnabled").check();
+await settingsPage.locator("#aiApiKey").fill("local-test-key");
+await settingsPage.locator("#saveButton").click();
+await settingsPage.waitForFunction(() => Boolean(globalThis.__storageData.aiSettings));
+const savedSettings = await settingsPage.evaluate(() => ({ settings: globalThis.__storageData.aiSettings, origins: globalThis.__requestedOrigins }));
+assert.equal(savedSettings.settings.enabled, true);
+assert.equal(savedSettings.settings.apiKey, "local-test-key");
+assert.deepEqual(savedSettings.origins, ["https://api.deepseek.com/*"]);
+await settingsContext.close();
+
 if (process.env.RESUME_PDF_PATH) {
   const actualBytes = Array.from(readFileSync(process.env.RESUME_PDF_PATH));
   const actualResult = await page.evaluate(async (bytes) => {
