@@ -263,8 +263,13 @@
       const fieldSignature = signature(element, descriptor);
       const savedRule = siteRules?.[fieldSignature] || "";
       const profileRule = savedRule.startsWith("profile:") ? savedRule.slice(8) : (catalog.byKey[savedRule] ? savedRule : "");
-      const learnedRule = savedRule.startsWith("learned:") ? savedRule.slice(8) : "";
       const match = bestMatch(element, descriptor, profileRule);
+      const savedLearnedRule = savedRule.startsWith("learned:") ? savedRule.slice(8) : "";
+      // Older versions could remember a standard repeated field as a custom
+      // learned answer. Once the field is clearly recognized as education or
+      // work, let the structured record take precedence over that stale rule.
+      const isStructuredMatch = match.score >= 68 && (workKeys.has(match.key) || educationKeys.has(match.key));
+      const learnedRule = isStructuredMatch ? "" : savedLearnedRule;
       const matched = match.score >= 48;
       const field = matched ? catalog.byKey[match.key] : null;
       const profileValue = field && !learnedRule ? String(profile?.[match.key] || "").trim() : "";

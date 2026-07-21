@@ -58,6 +58,18 @@ const preferredEducationScan = await page.evaluate(({ profileData, signature }) 
   globalThis.__testMessageListener({ type: "RESUME_SCAN", profile: profileData, learnedAnswers: {}, siteRules: { [signature]: "education:1:school" } }, {}, resolve);
 }), { profileData: profile, signature: schoolCandidates[0].signature });
 assert.equal(preferredEducationScan.candidates.find((item) => item.signature === schoolCandidates[0].signature).preferredSourceRef, "education:1:school");
+const staleLearnedScan = await page.evaluate(({ profileData, signature }) => new Promise((resolve) => {
+  globalThis.__testMessageListener({
+    type: "RESUME_SCAN",
+    profile: profileData,
+    learnedAnswers: { stale_major: { label: "专业名称", value: "错误的旧答案" } },
+    siteRules: { [signature]: "learned:stale_major" }
+  }, {}, resolve);
+}), { profileData: profile, signature: majorCandidates[1].signature });
+const migratedMajor = staleLearnedScan.candidates.find((item) => item.elementId === majorCandidates[1].elementId);
+assert.equal(migratedMajor.matchedKey, "major");
+assert.equal(migratedMajor.learnedKey, "");
+assert.equal(migratedMajor.recordIndex, 1);
 
 const selections = scanned.candidates
   .filter((item) => ["fullName", "phone", "degree"].includes(item.matchedKey))
