@@ -131,6 +131,12 @@
     return [...new Set(parts.filter((part) => part && part.length <= 100))].join(" · ").slice(0, 180);
   }
 
+  function instructionFor(element) {
+    const container = element.closest(".form-item, .ant-form-item, .el-form-item, [role=group], section, article");
+    if (!container) return "";
+    return textOf(container).replace(textOf(element), "").replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+
   function optionsFor(element) {
     if (element instanceof HTMLSelectElement) return Array.from(element.options).map((option) => option.text.trim()).filter(Boolean).slice(0, 80);
     if (element.type === "radio") {
@@ -183,6 +189,12 @@
     const descriptorText = normalize(Object.values(descriptor).join(" "));
     if (element instanceof HTMLTextAreaElement && /实习经历|实习经验|实践经历/.test(descriptorText) && result.score < 92) {
       result = { key: "internshipSummary", score: 92 };
+    }
+    if (element instanceof HTMLTextAreaElement && /教育经历|教育背景|学习经历/.test(descriptorText) && result.score < 92) {
+      result = { key: "educationSummary", score: 92 };
+    }
+    if (element instanceof HTMLTextAreaElement && /工作经历|工作经验|任职经历/.test(descriptorText) && result.score < 92) {
+      result = { key: "workSummary", score: 92 };
     }
     return result;
   }
@@ -273,7 +285,8 @@
     const workOccurrences = {};
     const educationOccurrences = {};
     const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
-    const aggregateWorkKeys = new Set(["internshipSummary"]);
+    const aggregateWorkKeys = new Set(["internshipSummary", "workSummary"]);
+    const aggregateEducationKeys = new Set(["educationSummary"]);
     const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const candidates = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
@@ -293,14 +306,14 @@
       // Older versions could remember a standard repeated field as a custom
       // learned answer. Once the field is clearly recognized as education or
       // work, let the structured record take precedence over that stale rule.
-      const hasStructuredContainer = (educationKeys.has(match.key) && (educationExperiences.length || profile?.[match.key]))
+      const hasStructuredContainer = ((educationKeys.has(match.key) || aggregateEducationKeys.has(match.key)) && (educationExperiences.length || profile?.[match.key]))
         || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && (workExperiences.length || profile?.[match.key]));
       const isStructuredMatch = match.score >= 68 && hasStructuredContainer;
       const learnedRule = isStructuredMatch ? "" : savedLearnedRule;
       const matched = match.score >= 48;
       const field = matched ? catalog.byKey[match.key] : null;
       const profileValue = field && !learnedRule ? String(profile?.[match.key] || "").trim() : "";
-      const structuredAvailable = !learnedRule && matched && ((educationKeys.has(match.key) && educationExperiences.length)
+      const structuredAvailable = !learnedRule && matched && (((educationKeys.has(match.key) || aggregateEducationKeys.has(match.key)) && educationExperiences.length)
         || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && workExperiences.length));
       const sourceAvailable = Boolean(profileValue) || Boolean(structuredAvailable);
       const naturalQuestionKey = questionKey(descriptor);
@@ -333,6 +346,10 @@
         signature: fieldSignature,
         label: descriptor.label || descriptor.aria || descriptor.placeholder || descriptor.name || descriptor.id || "未命名字段",
         section: sectionFor(element),
+        placeholder: descriptor.placeholder,
+        instruction: instructionFor(element),
+        aria: descriptor.aria,
+        name: descriptor.name,
         tag: element.tagName.toLowerCase(),
         inputType: element.getAttribute("type") || "",
         required: element.required || element.getAttribute("aria-required") === "true",

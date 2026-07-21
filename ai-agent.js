@@ -3,6 +3,7 @@
 
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: false,
+    shareResumeData: false,
     endpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-v4-flash",
     apiKey: ""
@@ -15,6 +16,7 @@
   function normalizeSettings(settings = {}) {
     return {
       enabled: Boolean(settings.enabled),
+      shareResumeData: Boolean(settings.shareResumeData),
       endpoint: cleanText(settings.endpoint || DEFAULT_SETTINGS.endpoint, 500),
       model: cleanText(settings.model || DEFAULT_SETTINGS.model, 120),
       apiKey: String(settings.apiKey || "").trim()
@@ -32,28 +34,53 @@
     return `${parsed.protocol}//${parsed.hostname}/*`;
   }
 
-  function sourceCatalog(catalog, profile, workExperiences, learnedAnswers, educationExperiences) {
+  function displayMonth(value, ongoing = false) {
+    if (!value) return ongoing ? "至今" : "时间待补充";
+    const match = String(value).match(/((?:19|20)\d{2})-(\d{2})/);
+    return match ? `${match[1]}年${Number(match[2])}月` : String(value);
+  }
+
+  function formatRecords(records, kind) {
+    return (records || []).map((record) => {
+      const dates = `${displayMonth(record.startDate)}–${displayMonth(record.endDate, record.ongoing || !record.endDate)}`;
+      if (kind === "education") {
+        const qualification = [record.major, record.degree].filter(Boolean).join("（") + (record.major && record.degree ? "）" : "");
+        return [[dates, record.school, record.department, qualification].filter(Boolean).join("｜"), String(record.description || "").trim()].filter(Boolean).join("\n");
+      }
+      const title = String(record.jobTitle || "").replace("|", "（") + (String(record.jobTitle || "").includes("|") ? "）" : "");
+      return [[dates, record.company, title].filter(Boolean).join("｜"), String(record.description || "").trim()].filter(Boolean).join("\n");
+    }).filter(Boolean).join("\n\n");
+  }
+
+  function sourceCatalog(catalog, profile, workExperiences, learnedAnswers, educationExperiences, options = {}) {
     const sources = [];
+    const includeValues = Boolean(options.includeValues);
+    const privateProfileKeys = new Set(["fullName", "englishName", "phone", "email", "address", "idNumber"]);
+    const addSource = (metadata, value) => {
+      const source = { ...metadata };
+      if (includeValues && !metadata.sensitive) source.value = String(value || "").slice(0, 8000);
+      sources.push(source);
+    };
     const legacyWorkKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
     const legacyEducationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     for (const field of catalog.fields || []) {
       if (!String(profile?.[field.key] || "").trim()) continue;
       if ((workExperiences || []).length && legacyWorkKeys.has(field.key)) continue;
       if ((educationExperiences || []).length && legacyEducationKeys.has(field.key)) continue;
-      sources.push({ sourceRef: `profile:${field.key}`, label: field.label, group: field.group, type: field.type || "text", sensitive: Boolean(field.sensitive) });
+      addSource({ sourceRef: `profile:${field.key}`, label: field.label, group: field.group, type: field.type || "text", sensitive: Boolean(field.sensitive || privateProfileKeys.has(field.key)) }, profile[field.key]);
     }
     const educationLabels = { school: "学校", department: "院系", major: "专业", degree: "学历/学位", startDate: "开始日期", endDate: "结束日期", description: "教育描述" };
     (educationExperiences || []).forEach((education, index) => {
       for (const [key, label] of Object.entries(educationLabels)) {
         if (!String(education?.[key] || "").trim()) continue;
-        sources.push({ sourceRef: `education:${index}:${key}`, label: `教育经历 ${index + 1} · ${label}`, group: `教育经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false });
+        addSource({ sourceRef: `education:${index}:${key}`, label: `教育经历 ${index + 1} · ${label}`, group: `教育经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false, recordType: "education", recordIndex: index }, education[key]);
       }
     });
     const experienceLabels = { company: "公司/单位", jobTitle: "职位", startDate: "开始日期", endDate: "结束日期", description: "工作描述" };
     (workExperiences || []).forEach((experience, index) => {
       for (const [key, label] of Object.entries(experienceLabels)) {
         if (!String(experience?.[key] || "").trim()) continue;
-        sources.push({ sourceRef: `experience:${index}:${key}`, label: `工作经历 ${index + 1} · ${label}`, group: `工作经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false });
+        addSource({ sourceRef: `experience:${index}:${key}`, label: `工作经历 ${index + 1} · ${label}`, group: `工作经历 ${index + 1}`, type: key === "description" ? "textarea" : "text", sensitive: false, recordType: "work", recordIndex: index }, experience[key]);
       }
     });
     const hasWorkCategories = (workExperiences || []).some((experience) => experience?.category);
@@ -61,11 +88,13 @@
       ? (workExperiences || []).filter((experience) => experience.category === "internship")
       : ((workExperiences || []).some((experience) => /实习|intern/i.test(experience?.jobTitle || "")) ? (workExperiences || []) : []);
     if (internshipRecords.length) {
-      sources.push({ sourceRef: "computed:internshipSummary", label: "全部实习经历汇总", group: "自动汇总", type: "textarea", sensitive: false });
+      addSource({ sourceRef: "computed:internshipSummary", label: "全部实习经历汇总（分段文本）", group: "自动汇总", type: "textarea", sensitive: false }, formatRecords(internshipRecords, "work"));
     }
+    if ((workExperiences || []).length) addSource({ sourceRef: "computed:workSummary", label: "全部工作经历汇总（分段文本）", group: "自动汇总", type: "textarea", sensitive: false }, formatRecords(workExperiences, "work"));
+    if ((educationExperiences || []).length) addSource({ sourceRef: "computed:educationSummary", label: "全部教育经历汇总（分段文本）", group: "自动汇总", type: "textarea", sensitive: false }, formatRecords(educationExperiences, "education"));
     for (const [key, answer] of Object.entries(learnedAnswers || {})) {
       if (!String(answer?.value || "").trim()) continue;
-      sources.push({ sourceRef: `learned:${key}`, label: cleanText(answer.label || key), group: "已学习答案", type: "text", sensitive: Boolean(answer.sensitive) });
+      addSource({ sourceRef: `learned:${key}`, label: cleanText(answer.label || key), group: "已学习答案", type: "text", sensitive: Boolean(answer.sensitive) }, answer.value);
     }
     return sources;
   }
@@ -75,6 +104,10 @@
       elementId: cleanText(candidate.elementId, 80),
       label: cleanText(candidate.label),
       section: cleanText(candidate.section),
+      placeholder: cleanText(candidate.placeholder, 500),
+      instruction: cleanText(candidate.instruction, 800),
+      aria: cleanText(candidate.aria, 240),
+      name: cleanText(candidate.name, 160),
       tag: cleanText(candidate.tag, 30),
       inputType: cleanText(candidate.inputType, 30),
       required: Boolean(candidate.required),
@@ -99,7 +132,11 @@
         label: cleanText(source.label),
         group: cleanText(source.group, 100),
         type: cleanText(source.type, 30),
-        sensitive: Boolean(source.sensitive)
+        format: String(source.sourceRef || "").startsWith("computed:") ? "multiline_records" : "single_value",
+        sensitive: Boolean(source.sensitive),
+        recordType: cleanText(source.recordType, 30),
+        recordIndex: Number.isFinite(Number(source.recordIndex)) ? Number(source.recordIndex) : null,
+        ...(Object.prototype.hasOwnProperty.call(source, "value") ? { value: String(source.value || "").slice(0, 8000) } : {})
       }))
     };
   }
@@ -161,7 +198,7 @@
           messages: [
             {
               role: "system",
-              content: "你是招聘网申表单映射 Agent。根据网页字段的标签、所属区块、控件类型和选项，从 allowedSources 中选择最符合的 sourceRef。必须区分现居城市与期望城市、学历与学位、教育经历与工作经历，并按重复区块顺序匹配多段经历。同一个 recordType+recordIndex 区块内的学校、专业、学历和日期必须全部来自相同索引的结构化记录，严禁跨教育记录拼接。不得编造值、字段或 sourceRef；不确定时省略。已有值的字段不要映射。只返回 JSON 对象：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"简短理由\"}]}。"
+              content: "你是招聘网申表单语义扫描 Agent。阅读每个网页栏位的标签、区块、占位提示、说明、控件类型和选项，并从 allowedSources 中选择应填写的唯一 sourceRef。allowedSources 可能包含实际简历值；只能理解和选择，不能改写、补全或编造值。网页把经历拆成学校/专业/公司/职位等多个字段时选择对应记录的原子来源；网页只有一个教育/工作/实习大文本框时选择相应 computed:*Summary 分段汇总来源。必须区分现居城市与期望城市、学历与学位、教育与工作。同一个 recordType+recordIndex 区块必须使用同索引记录，严禁跨记录拼接。已有值的栏位不映射；没有可靠来源时省略。只返回 JSON：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"说明栏位要求、选择该来源及分段/汇总判断\"}]}。"
             },
             { role: "user", content: JSON.stringify(prompt) }
           ]

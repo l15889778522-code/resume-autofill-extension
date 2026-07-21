@@ -80,21 +80,34 @@ function displayMonth(value, ongoing = false) {
   return match ? `${match[1]}年${Number(match[2])}月` : String(value);
 }
 
-function internshipSummary() {
-  return internshipRecords().map((experience) => {
-    const dates = `${displayMonth(experience.startDate)}–${displayMonth(experience.endDate, experience.ongoing || !experience.endDate)}`;
-    const title = String(experience.jobTitle || "").replace("|", "（") + (String(experience.jobTitle || "").includes("|") ? "）" : "");
-    const heading = [dates, experience.company, title].filter(Boolean).join("｜");
-    return [heading, String(experience.description || "").trim()].filter(Boolean).join("\n");
+function formatRecords(records, kind) {
+  return (records || []).map((record) => {
+    const dates = `${displayMonth(record.startDate)}–${displayMonth(record.endDate, record.ongoing || !record.endDate)}`;
+    if (kind === "education") {
+      const qualification = [record.major, record.degree].filter(Boolean).join("（") + (record.major && record.degree ? "）" : "");
+      const heading = [dates, record.school, record.department, qualification].filter(Boolean).join("｜");
+      return [heading, String(record.description || "").trim()].filter(Boolean).join("\n");
+    }
+    const title = String(record.jobTitle || "").replace("|", "（") + (String(record.jobTitle || "").includes("|") ? "）" : "");
+    const heading = [dates, record.company, title].filter(Boolean).join("｜");
+    return [heading, String(record.description || "").trim()].filter(Boolean).join("\n");
   }).filter(Boolean).join("\n\n");
+}
+
+function computedSourceValue(sourceRef) {
+  if (sourceRef === "computed:internshipSummary") return formatRecords(internshipRecords(), "work");
+  if (sourceRef === "computed:workSummary") return formatRecords(state.workExperiences, "work");
+  if (sourceRef === "computed:educationSummary") return formatRecords(state.educationExperiences, "education");
+  return "";
 }
 
 function sourceFor(candidate) {
   if (candidate.preferredSourceRef && sourceDetails(candidate.preferredSourceRef).value) return candidate.preferredSourceRef;
   if (candidate.agentSourceRef && sourceDetails(candidate.agentSourceRef).value) return candidate.agentSourceRef;
-  if (candidate.matchedKey === "internshipSummary") {
-    if (state.profile.internshipSummary) return "profile:internshipSummary";
-    if (internshipSummary()) return "computed:internshipSummary";
+  const computedByField = { internshipSummary: "computed:internshipSummary", workSummary: "computed:workSummary", educationSummary: "computed:educationSummary" };
+  if (computedByField[candidate.matchedKey]) {
+    if (state.profile[candidate.matchedKey]) return `profile:${candidate.matchedKey}`;
+    if (computedSourceValue(computedByField[candidate.matchedKey])) return computedByField[candidate.matchedKey];
   }
   const educationField = educationFieldMap[candidate.matchedKey];
   const education = state.educationExperiences[candidate.recordIndex || candidate.repeatIndex || 0];
@@ -108,7 +121,7 @@ function sourceFor(candidate) {
 }
 
 function sourceDetails(sourceRef) {
-  if (sourceRef === "computed:internshipSummary") return { value: internshipSummary(), sensitive: false, key: "internshipSummary" };
+  if (sourceRef.startsWith("computed:")) return { value: computedSourceValue(sourceRef), sensitive: false, key: sourceRef.slice(9) };
   if (sourceRef.startsWith("education:")) {
     const [, index, key] = sourceRef.split(":");
     const education = state.educationExperiences[Number(index)] || {};
@@ -156,9 +169,12 @@ function sourceOptions(selectedSource) {
     const selected = ref === selectedSource ? " selected" : "";
     return `<option value="${ref}"${selected}>经历 ${index + 1} · ${escapeHtml(experience.company || experience.jobTitle)} · ${label}</option>`;
   })).join("");
-  const computedValue = internshipSummary();
-  const computedRef = "computed:internshipSummary";
-  const computedOptions = computedValue ? `<option value="${computedRef}"${selectedSource === computedRef ? " selected" : ""}>自动汇总 · 全部实习经历</option>` : "";
+  const computedLabels = {
+    "computed:internshipSummary": "全部实习经历（分段）",
+    "computed:workSummary": "全部工作经历（分段）",
+    "computed:educationSummary": "全部教育经历（分段）"
+  };
+  const computedOptions = Object.entries(computedLabels).filter(([ref]) => computedSourceValue(ref)).map(([ref, label]) => `<option value="${ref}"${selectedSource === ref ? " selected" : ""}>自动汇总 · ${label}</option>`).join("");
   return `<option value="">选择填写内容…</option><optgroup label="简历资料">${profileOptions}</optgroup>${computedOptions ? `<optgroup label="自动汇总">${computedOptions}</optgroup>` : ""}${educationOptions ? `<optgroup label="教育经历">${educationOptions}</optgroup>` : ""}${experienceOptions ? `<optgroup label="工作经历">${experienceOptions}</optgroup>` : ""}${learnedOptions ? `<optgroup label="已学习答案">${learnedOptions}</optgroup>` : ""}`;
 }
 
@@ -301,7 +317,9 @@ async function scan() {
     state.candidates = response.candidates || [];
     state.pageContext = { hostname: state.hostname, language: response.pageContext?.language || "" };
     elements.aiRecognize.disabled = false;
-    elements.aiRecognize.title = state.aiSettings.enabled && state.aiSettings.apiKey ? "让 AI Agent 理解低置信和未知字段" : "点击查看 AI Agent 配置提示";
+    elements.aiRecognize.title = state.aiSettings.enabled && state.aiSettings.apiKey
+      ? (state.aiSettings.shareResumeData ? "让 AI 阅读栏位要求和非敏感简历内容，规划分段或汇总填写" : "当前为仅字段名称模式；在资料库开启简历内容授权可使用完整语义扫描")
+      : "点击查看 AI Agent 配置提示";
     renderFill();
   } catch (error) {
     const internalPage = /Cannot access|chrome:\/\/|edge:\/\/|extensions/i.test(error.message);
@@ -331,27 +349,28 @@ async function recognizeWithAi() {
       setStatus("请先在资料库的“AI Agent”中启用服务并填写 API Key。", true);
       return;
     }
+    if (!state.aiSettings.shareResumeData) {
+      setStatus("当前只启用了接口，没有授权简历内容。请在资料库勾选“语义扫描时允许向 AI 发送简历内容和已学习答案”后再试。", true);
+      return;
+    }
     if (!(await ensureAiPermission())) {
       setStatus("未授予 AI 接口访问权限，已保留本地匹配结果。", true);
       return;
     }
-    const sources = globalThis.ResumeAiAgent.sourceCatalog(catalog, state.profile, state.workExperiences, state.learnedAnswers, state.educationExperiences);
+    const sources = globalThis.ResumeAiAgent.sourceCatalog(catalog, state.profile, state.workExperiences, state.learnedAnswers, state.educationExperiences, { includeValues: true });
     const eligible = state.candidates.filter((candidate) => !candidate.currentValue && Number(candidate.confidence || 0) < 110);
     if (!eligible.length || !sources.length) {
       setStatus("当前页面没有需要 Agent 重新判断的空字段。", false);
       return;
     }
     elements.aiRecognize.disabled = true;
-    elements.aiRecognize.textContent = "AI 分析中…";
+    elements.aiRecognize.textContent = "AI 语义扫描中…";
     const response = await sendRuntimeMessage({ type: "AI_PLAN_MAPPINGS", candidates: eligible, sources, pageContext: state.pageContext });
-    if (!response?.ok) throw new Error(response?.error || "AI 识别失败");
+    if (!response?.ok) throw new Error(response?.error || "AI 语义扫描失败");
     let applied = 0;
     for (const assignment of response.assignments || []) {
       const candidate = state.candidates.find((item) => item.elementId === assignment.elementId);
-      if (!candidate || assignment.confidence < 55 || !sourceDetails(assignment.sourceRef).value) continue;
-      const currentConfidence = Number(candidate.confidence || 0);
-      const currentSource = sourceFor(candidate);
-      if (currentSource && currentConfidence >= 88 && currentSource !== assignment.sourceRef && assignment.confidence < currentConfidence) continue;
+      if (!candidate || assignment.confidence < 60 || !sourceDetails(assignment.sourceRef).value) continue;
       candidate.agentSourceRef = assignment.sourceRef;
       candidate.confidence = assignment.confidence;
       candidate.matchMethod = "ai";
@@ -359,12 +378,12 @@ async function recognizeWithAi() {
       applied += 1;
     }
     renderFill();
-    elements.aiRecognize.textContent = applied ? `AI 已匹配 ${applied} 项` : "AI 无可靠建议";
+    elements.aiRecognize.textContent = applied ? `AI 已规划 ${applied} 项` : "AI 无可靠建议";
   } catch (error) {
-    setStatus(`AI 识别失败：${error.message}。本地匹配结果仍可使用。`, true);
+    setStatus(`AI 语义扫描失败：${error.message}。本地匹配结果仍可使用。`, true);
   } finally {
     elements.aiRecognize.disabled = false;
-    if (/分析中/.test(elements.aiRecognize.textContent)) elements.aiRecognize.textContent = "AI 识别";
+    if (/扫描中|分析中/.test(elements.aiRecognize.textContent)) elements.aiRecognize.textContent = "AI 语义扫描";
   }
 }
 

@@ -11,10 +11,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
       const stored = await chrome.storage.local.get(["aiSettings"]);
+      const settings = globalThis.ResumeAiAgent.normalizeSettings(stored.aiSettings);
+      const sources = (message.sources || []).map((source) => {
+        if (settings.shareResumeData) return source;
+        const { value: _discardedValue, ...metadata } = source;
+        return metadata;
+      });
       const assignments = await globalThis.ResumeAiAgent.planMappings({
-        settings: stored.aiSettings,
+        settings,
         candidates: message.candidates || [],
-        sources: message.sources || [],
+        sources,
         pageContext: message.pageContext || {}
       });
       sendResponse({ ok: true, assignments });

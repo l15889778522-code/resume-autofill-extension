@@ -18,6 +18,7 @@ const context = await browser.newContext();
 await context.addInitScript(() => {
   globalThis.__requestedOrigins = [];
   globalThis.__savedValues = {};
+  globalThis.__aiMessage = null;
   const candidate = {
     elementId: "desired-location",
     signature: "input:text:工作地点偏好",
@@ -89,7 +90,8 @@ await context.addInitScript(() => {
     runtime: {
       lastError: null,
       openOptionsPage() {},
-      sendMessage(_message, callback) {
+      sendMessage(message, callback) {
+        globalThis.__aiMessage = message;
         callback({ ok: true, assignments: [{ elementId: "desired-location", sourceRef: "profile:desiredCity", confidence: 94, reason: "求职意向中的地点偏好" }] });
       }
     },
@@ -121,7 +123,7 @@ await context.addInitScript(() => {
             ],
             learnedAnswers: { stale_department: { label: "院系", value: "理工科技学部" } },
             siteRules: {},
-            aiSettings: { enabled: true, endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", apiKey: "local-test-key" }
+            aiSettings: { enabled: true, shareResumeData: true, endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", apiKey: "local-test-key" }
           };
         },
         async set(values) { Object.assign(globalThis.__savedValues, values); }
@@ -145,6 +147,10 @@ assert.match(await internshipRow.locator(".candidate-value").textContent(), /深
 assert.match(await page.locator(".agent-reason").textContent(), /地点偏好/);
 assert.equal(await page.locator(".candidate-check").first().isChecked(), true);
 assert.deepEqual(await page.evaluate(() => globalThis.__requestedOrigins), ["https://api.deepseek.com/*"]);
+const aiMessage = await page.evaluate(() => globalThis.__aiMessage);
+assert.equal(aiMessage.type, "AI_PLAN_MAPPINGS");
+assert.equal(aiMessage.sources.some((source) => source.sourceRef === "education:1:major" && source.value === "统计学"), true);
+assert.equal(aiMessage.sources.some((source) => source.sourceRef === "computed:internshipSummary" && /国金证券/.test(source.value)), true);
 await page.locator("#learnPage").click();
 await page.locator(".learn-destination").waitFor();
 assert.match(await page.locator(".learn-destination").textContent(), /教育经历 1 · 院系/);

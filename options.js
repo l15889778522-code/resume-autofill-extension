@@ -67,8 +67,8 @@ aiSection.id = "ai-agent";
 aiSection.innerHTML = `
   <div class="section-title-row">
     <div>
-      <h2>AI Agent 字段识别</h2>
-      <p class="hint">可选功能。模型只接收网页字段结构和资料字段名称，不接收姓名、电话、邮箱或经历正文；返回结果必须在本地预览后才能填写。</p>
+      <h2>AI Agent 语义扫描</h2>
+      <p class="hint">Agent 会理解网页每个栏位的要求，判断应使用哪条简历记录，以及应该分字段填写还是选择本地汇总文本。</p>
     </div>
     <label class="switch-label"><input id="aiEnabled" type="checkbox"> 启用</label>
   </div>
@@ -77,7 +77,8 @@ aiSection.innerHTML = `
     <div class="field"><label for="aiModel">模型</label><input id="aiModel" type="text" autocomplete="off"></div>
     <div class="field"><label for="aiApiKey">API Key（仅保存在本机）</label><input id="aiApiKey" type="password" autocomplete="off"></div>
   </div>
-  <div class="ai-notice">默认使用 DeepSeek Chat Completions 接口。保存时浏览器只会请求该接口域名的访问权限；招聘网站内容不会自动发送。</div>`;
+  <label class="switch-label ai-data-switch"><input id="aiShareResumeData" type="checkbox"> 语义扫描时允许向 AI 发送简历内容和已学习答案</label>
+  <div class="ai-notice">关闭上方开关时，AI 只能看到字段名称，能力接近普通匹配。开启后，仅在你主动点击“AI 语义扫描”时发送当前网页栏位说明及用于判断经历关系的简历内容；姓名、电话、邮箱、地址和证件号码的实际值不会发送，填写前仍会本地预览。</div>`;
 form.append(aiSection);
 
 const learnedLink = document.createElement("a");
@@ -145,6 +146,7 @@ function learnedValues() {
 function collectAiSettings() {
   return globalThis.ResumeAiAgent.normalizeSettings({
     enabled: document.querySelector("#aiEnabled").checked,
+    shareResumeData: document.querySelector("#aiShareResumeData").checked,
     endpoint: document.querySelector("#aiEndpoint").value,
     model: document.querySelector("#aiModel").value,
     apiKey: document.querySelector("#aiApiKey").value
@@ -154,6 +156,7 @@ function collectAiSettings() {
 function renderAiSettings() {
   const normalized = globalThis.ResumeAiAgent.normalizeSettings(aiSettings);
   document.querySelector("#aiEnabled").checked = normalized.enabled;
+  document.querySelector("#aiShareResumeData").checked = normalized.shareResumeData;
   document.querySelector("#aiEndpoint").value = normalized.endpoint;
   document.querySelector("#aiModel").value = normalized.model;
   document.querySelector("#aiApiKey").value = normalized.apiKey;
