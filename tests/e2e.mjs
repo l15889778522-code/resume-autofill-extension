@@ -27,7 +27,7 @@ await page.evaluate(() => {
 await page.addScriptTag({ path: path.join(here, "..", "field-catalog.js") });
 await page.addScriptTag({ path: path.join(here, "..", "content.js") });
 
-const profile = { fullName: "张三", phone: "13800000000", email: "new@example.com", school: "香港理工大学", major: "医疗数据科学", degree: "本科", desiredCity: "上海", latestCompany: "当前公司", latestJobTitle: "数据分析师" };
+const profile = { fullName: "张三", phone: "13800000000", email: "new@example.com", school: "香港理工大学", major: "医疗数据科学", degree: "本科", desiredCity: "上海", latestCompany: "当前公司", latestJobTitle: "数据分析师", projectSummary: "用户行为分析项目\n• 输出运营策略" };
 const educationExperiences = [
   { school: "香港理工大学", department: "", major: "医疗数据科学", degree: "硕士", startDate: "2025-09-01", endDate: "2027-01-01" },
   { school: "北师香港浸会大学", department: "理工科技学部", major: "统计学", degree: "本科", startDate: "2021-09-01", endDate: "2025-07-01" }
@@ -41,13 +41,17 @@ const scanned = await page.evaluate(({ profileData, educations, work }) => new P
 }), { profileData: profile, educations: educationExperiences, work: workExperiences });
 
 assert.equal(scanned.ok, true);
-assert.equal(scanned.candidates.length, 18);
+assert.equal(scanned.candidates.length, 19);
 assert.equal(scanned.candidates.find((item) => item.label === "姓名").matchedKey, "fullName");
 assert.equal(scanned.candidates.find((item) => item.label === "站点专用问题").matchedKey, "");
 const internshipSummaryCandidate = scanned.candidates.find((item) => item.matchedKey === "internshipSummary");
 assert.equal(internshipSummaryCandidate.matchedKey, "internshipSummary");
 assert.equal(internshipSummaryCandidate.recordType, "");
 assert.ok(internshipSummaryCandidate.confidence >= 88);
+assert.equal(internshipSummaryCandidate.aggregateType, "internship");
+const projectSummaryCandidate = scanned.candidates.find((item) => item.matchedKey === "projectSummary");
+assert.equal(projectSummaryCandidate.aggregateType, "project");
+assert.ok(projectSummaryCandidate.confidence >= 92);
 const fuzzyCity = scanned.candidates.find((item) => item.label === "期望城巿");
 assert.equal(fuzzyCity.matchedKey, "desiredCity");
 assert.ok(fuzzyCity.confidence >= 68 && fuzzyCity.confidence < 88);

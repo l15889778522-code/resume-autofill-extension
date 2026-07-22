@@ -239,6 +239,32 @@
     if (latest.description) setResult(result, "workDescription", latest.description, 82, latest.description);
   }
 
+  function parseProjectSummary(lines, result) {
+    const headingIndex = lines.findIndex((line) => ["项目经历", "项目经验", "projects", "project experience"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    if (headingIndex < 0) return;
+    const nextHeadingIndex = lines.findIndex((line, index) => index > headingIndex && [
+      "技能", "专业技能", "技术栈", "证书", "获奖经历", "个人简介", "自我评价", "教育背景", "教育经历", "工作经历", "工作经验", "实习经历", "实习经验",
+      "skills", "certificates", "awards", "summary", "education", "experience"
+    ].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    const body = lines.slice(headingIndex + 1, nextHeadingIndex > headingIndex ? nextHeadingIndex : lines.length).map(cleanValue).filter(Boolean);
+    if (!body.length) return;
+    const paragraphs = [];
+    for (const line of body) {
+      const bullet = line.match(/^[·•●▪◦-]\s*(.+)$/);
+      if (bullet) {
+        paragraphs.push(`• ${bullet[1].trim()}`);
+      } else if (paragraphs.length > 1 && paragraphs[paragraphs.length - 1].startsWith("• ")) {
+        paragraphs[paragraphs.length - 1] += line;
+      } else {
+        paragraphs.push(line);
+      }
+    }
+    const firstBullet = paragraphs.findIndex((paragraph) => paragraph.startsWith("• "));
+    if (firstBullet > 1) paragraphs.splice(0, firstBullet, paragraphs.slice(0, firstBullet).join("｜"));
+    const summary = paragraphs.join("\n");
+    setResult(result, "projectSummary", summary, 92, summary);
+  }
+
   function extractProfileFromText(input) {
     const text = normalizeText(input);
     const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -251,6 +277,7 @@
 
     parseEducation(lines, result);
     parseWorkExperiences(lines, result);
+    parseProjectSummary(lines, result);
 
     const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
     if (email) setResult(result, "email", email, 99, email);

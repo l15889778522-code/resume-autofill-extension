@@ -102,13 +102,13 @@ function computedSourceValue(sourceRef) {
 }
 
 function sourceFor(candidate) {
+  const computedByField = { internshipSummary: "computed:internshipSummary", workSummary: "computed:workSummary", educationSummary: "computed:educationSummary", projectSummary: "profile:projectSummary" };
+  if (computedByField[candidate.matchedKey]) {
+    const aggregateSource = computedByField[candidate.matchedKey];
+    if (sourceDetails(aggregateSource).value) return aggregateSource;
+  }
   if (candidate.preferredSourceRef && sourceDetails(candidate.preferredSourceRef).value) return candidate.preferredSourceRef;
   if (candidate.agentSourceRef && sourceDetails(candidate.agentSourceRef).value) return candidate.agentSourceRef;
-  const computedByField = { internshipSummary: "computed:internshipSummary", workSummary: "computed:workSummary", educationSummary: "computed:educationSummary" };
-  if (computedByField[candidate.matchedKey]) {
-    if (state.profile[candidate.matchedKey]) return `profile:${candidate.matchedKey}`;
-    if (computedSourceValue(computedByField[candidate.matchedKey])) return computedByField[candidate.matchedKey];
-  }
   const educationField = educationFieldMap[candidate.matchedKey];
   const education = state.educationExperiences[candidate.recordIndex || candidate.repeatIndex || 0];
   if (educationField && education?.[educationField]) return `education:${candidate.recordIndex || candidate.repeatIndex || 0}:${educationField}`;
@@ -371,6 +371,8 @@ async function recognizeWithAi() {
     for (const assignment of response.assignments || []) {
       const candidate = state.candidates.find((item) => item.elementId === assignment.elementId);
       if (!candidate || assignment.confidence < 60 || !sourceDetails(assignment.sourceRef).value) continue;
+      const requiredAggregateSource = { internshipSummary: "computed:internshipSummary", workSummary: "computed:workSummary", educationSummary: "computed:educationSummary", projectSummary: "profile:projectSummary" }[candidate.matchedKey];
+      if (requiredAggregateSource && assignment.sourceRef !== requiredAggregateSource) continue;
       candidate.agentSourceRef = assignment.sourceRef;
       candidate.confidence = assignment.confidence;
       candidate.matchMethod = "ai";

@@ -134,6 +134,7 @@ if (process.env.RESUME_PDF_PATH) {
       hasLatestCompany: Boolean(result.profile.latestCompany),
       hasLatestJobTitle: Boolean(result.profile.latestJobTitle),
       hasWorkDescription: Boolean(result.profile.workDescription),
+      projectSummary: result.profile.projectSummary || "",
       educationExperienceCount: Array.isArray(result.educationExperiences) ? result.educationExperiences.length : 0,
       educationSummaries: (result.educationExperiences || []).map((education) => ({ school: education.school, major: education.major, degree: education.degree })),
       workExperienceCount: Array.isArray(result.workExperiences) ? result.workExperiences.length : 0,
@@ -148,6 +149,8 @@ if (process.env.RESUME_PDF_PATH) {
     { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
   ]);
   assert.equal(actualResult.workSummaries.every((experience) => experience.category === "internship"), true);
+  assert.match(actualResult.projectSummary, /用户行为分析与运营策略优化/);
+  assert.match(actualResult.projectSummary, /用户分层与内容生态诊断/);
 
   const optionsContext = await browser.newContext();
   await optionsContext.addInitScript(() => {
@@ -179,6 +182,7 @@ if (process.env.RESUME_PDF_PATH) {
   assert.equal(saved.educationExperiences[1].major, "统计学");
   assert.equal(saved.workExperiences.length, 2);
   assert.equal(saved.profile.latestCompany, saved.workExperiences[0].company);
+  assert.match(saved.profile.projectSummary, /用户行为分析与运营策略优化/);
   while (await optionsPage.locator(".experience-remove").count()) await optionsPage.locator(".experience-remove").first().click();
   await optionsPage.locator("#saveButton").click();
   await optionsPage.waitForTimeout(50);

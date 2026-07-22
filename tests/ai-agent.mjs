@@ -8,7 +8,7 @@ await import(pathToFileURL(path.join(here, "..", "ai-agent.js")));
 
 const agent = globalThis.ResumeAiAgent;
 const catalog = globalThis.ResumeFieldCatalog;
-const profile = { fullName: "张三", phone: "13800000000", desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学", idNumber: "110101199001010011" };
+const profile = { fullName: "张三", phone: "13800000000", desiredCity: "上海", school: "香港理工大学", major: "医疗数据科学", projectSummary: "用户行为分析项目\n• 用户分层与运营策略输出", idNumber: "110101199001010011" };
 const workExperiences = [{ company: "隐私公司", jobTitle: "数据分析师", category: "internship", description: "完成用户分析" }, { company: "第二公司", jobTitle: "运营分析师", category: "internship", description: "复盘运营活动" }];
 const learnedAnswers = {
   travel: { label: "是否接受出差", value: "每月最多两次", sensitive: false }
@@ -102,7 +102,13 @@ assert.deepEqual(workGuarded.map(({ elementId, sourceRef }) => ({ elementId, sou
   { elementId: "title-2", sourceRef: "experience:1:jobTitle" }
 ]);
 const aggregateGuarded = agent.validatePlan({ assignments: [
+  { elementId: "internship-textarea", sourceRef: "experience:0:description", confidence: 99, reason: "错误地选择了单段描述" },
   { elementId: "internship-textarea", sourceRef: "computed:internshipSummary", confidence: 97, reason: "页面要求在单个文本框汇总全部实习" }
-] }, [{ elementId: "internship-textarea", recordType: "", recordIndex: 0 }], semanticSources);
+] }, [{ elementId: "internship-textarea", recordType: "", recordIndex: 0, aggregateType: "internship" }], semanticSources);
 assert.equal(aggregateGuarded[0].sourceRef, "computed:internshipSummary");
+const projectGuarded = agent.validatePlan({ assignments: [
+  { elementId: "project-textarea", sourceRef: "experience:0:description", confidence: 99 },
+  { elementId: "project-textarea", sourceRef: "profile:projectSummary", confidence: 96 }
+] }, [{ elementId: "project-textarea", aggregateType: "project" }], semanticSources);
+assert.deepEqual(projectGuarded.map(({ sourceRef }) => sourceRef), ["profile:projectSummary"]);
 console.log("AI_AGENT_OK");

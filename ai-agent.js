@@ -115,6 +115,7 @@
       options: Array.isArray(candidate.options) ? candidate.options.map((option) => cleanText(option, 100)).filter(Boolean).slice(0, 80) : [],
       recordType: ["education", "work"].includes(candidate.recordType) ? candidate.recordType : "",
       recordIndex: Math.max(0, Number(candidate.recordIndex || 0)),
+      aggregateType: ["internship", "work", "education", "project"].includes(candidate.aggregateType) ? candidate.aggregateType : "",
       localSuggestion: cleanText(candidate.sourceRef || candidate.preferredSourceRef, 180),
       localConfidence: Math.max(0, Math.min(100, Number(candidate.confidence || 0)))
     };
@@ -159,6 +160,13 @@
       const sourceRef = cleanText(item?.sourceRef, 180);
       if (!allowedElements.has(elementId) || !allowedSources.has(sourceRef) || seen.has(elementId)) continue;
       const candidate = candidateById.get(elementId);
+      const aggregateSources = {
+        internship: "computed:internshipSummary",
+        work: "computed:workSummary",
+        education: "computed:educationSummary",
+        project: "profile:projectSummary"
+      };
+      if (candidate?.aggregateType && sourceRef !== aggregateSources[candidate.aggregateType]) continue;
       const expectedSourceType = candidate?.recordType === "work" ? "experience" : candidate?.recordType;
       if (expectedSourceType && hasStructuredType(expectedSourceType)) {
         const [sourceType, sourceIndex] = sourceRef.split(":");
@@ -198,7 +206,7 @@
           messages: [
             {
               role: "system",
-              content: "你是招聘网申表单语义扫描 Agent。阅读每个网页栏位的标签、区块、占位提示、说明、控件类型和选项，并从 allowedSources 中选择应填写的唯一 sourceRef。allowedSources 可能包含实际简历值；只能理解和选择，不能改写、补全或编造值。网页把经历拆成学校/专业/公司/职位等多个字段时选择对应记录的原子来源；网页只有一个教育/工作/实习大文本框时选择相应 computed:*Summary 分段汇总来源。必须区分现居城市与期望城市、学历与学位、教育与工作。同一个 recordType+recordIndex 区块必须使用同索引记录，严禁跨记录拼接。已有值的栏位不映射；没有可靠来源时省略。只返回 JSON：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"说明栏位要求、选择该来源及分段/汇总判断\"}]}。"
+              content: "你是招聘网申表单语义扫描 Agent。阅读每个网页栏位的标签、区块、占位提示、说明、控件类型和选项，并从 allowedSources 中选择应填写的唯一 sourceRef。allowedSources 可能包含实际简历值；只能理解和选择，不能改写、补全或编造值。网页把经历拆成学校/专业/公司/职位等多个字段时选择对应记录的原子来源；网页只有一个教育/工作/实习大文本框时选择相应 computed:*Summary 分段汇总来源；项目活动或研究成果大文本框选择 profile:projectSummary。必须区分现居城市与期望城市、学历与学位、教育、工作、实习和项目。同一个 recordType+recordIndex 区块必须使用同索引记录，严禁跨记录拼接。已有值的栏位不映射；没有可靠来源时省略。只返回 JSON：{\"assignments\":[{\"elementId\":\"...\",\"sourceRef\":\"...\",\"confidence\":0-100,\"reason\":\"说明栏位要求、选择该来源及分段/汇总判断\"}]}。"
             },
             { role: "user", content: JSON.stringify(prompt) }
           ]

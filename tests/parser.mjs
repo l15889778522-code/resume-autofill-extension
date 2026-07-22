@@ -66,6 +66,7 @@ const layoutText = `
 客户需求分析与活动效果复盘。
 项目经历
 用户行为分析项目
+· 用户分层与内容生态诊断：识别高价值用户并输出运营策略。
 `;
 const layoutResult = sandbox.ResumeParser.extractProfileFromText(layoutText);
 assert.equal(layoutResult.profile.fullName, "李小明");
@@ -96,5 +97,7 @@ assert.equal(layoutResult.workExperiences[0].company, "示例证券");
 assert.equal(layoutResult.workExperiences[1].company, "示例科技有限公司");
 assert.equal(layoutResult.workExperiences[0].category, "internship");
 assert.equal(layoutResult.workExperiences[1].category, "internship");
+assert.match(layoutResult.profile.projectSummary, /^用户行为分析项目/m);
+assert.match(layoutResult.profile.projectSummary, /• 用户分层与内容生态诊断/);
 
 console.log("PARSER_OK");

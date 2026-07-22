@@ -196,6 +196,9 @@
     if (element instanceof HTMLTextAreaElement && /工作经历|工作经验|任职经历/.test(descriptorText) && result.score < 92) {
       result = { key: "workSummary", score: 92 };
     }
+    if (element instanceof HTMLTextAreaElement && /项目活动经验|项目活动经历|项目经历|项目经验|研究成果|科研经历/.test(descriptorText) && result.score < 94) {
+      result = { key: "projectSummary", score: 94 };
+    }
     return result;
   }
 
@@ -287,6 +290,7 @@
     const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
     const aggregateWorkKeys = new Set(["internshipSummary", "workSummary"]);
     const aggregateEducationKeys = new Set(["educationSummary"]);
+    const aggregateProjectKeys = new Set(["projectSummary"]);
     const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const candidates = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
@@ -307,14 +311,16 @@
       // learned answer. Once the field is clearly recognized as education or
       // work, let the structured record take precedence over that stale rule.
       const hasStructuredContainer = ((educationKeys.has(match.key) || aggregateEducationKeys.has(match.key)) && (educationExperiences.length || profile?.[match.key]))
-        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && (workExperiences.length || profile?.[match.key]));
+        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && (workExperiences.length || profile?.[match.key]))
+        || (aggregateProjectKeys.has(match.key) && profile?.[match.key]);
       const isStructuredMatch = match.score >= 68 && hasStructuredContainer;
       const learnedRule = isStructuredMatch ? "" : savedLearnedRule;
       const matched = match.score >= 48;
       const field = matched ? catalog.byKey[match.key] : null;
       const profileValue = field && !learnedRule ? String(profile?.[match.key] || "").trim() : "";
       const structuredAvailable = !learnedRule && matched && (((educationKeys.has(match.key) || aggregateEducationKeys.has(match.key)) && educationExperiences.length)
-        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && workExperiences.length));
+        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && workExperiences.length)
+        || (aggregateProjectKeys.has(match.key) && profile?.[match.key]));
       const sourceAvailable = Boolean(profileValue) || Boolean(structuredAvailable);
       const naturalQuestionKey = questionKey(descriptor);
       const learnedMatch = bestLearnedMatch(naturalQuestionKey, learnedAnswers, learnedRule);
@@ -361,6 +367,7 @@
         repeatIndex,
         recordType,
         recordIndex: recordType ? recordIndex : 0,
+        aggregateType: match.key === "internshipSummary" ? "internship" : (match.key === "workSummary" ? "work" : (match.key === "educationSummary" ? "education" : (match.key === "projectSummary" ? "project" : ""))),
         score: match.score,
         confidence: sourceAvailable ? match.score : learnedMatch.score,
         currentValue: currentValue(element),
