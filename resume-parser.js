@@ -133,8 +133,15 @@
 
   function parseEducation(lines, result) {
     const headingIndex = lines.findIndex((line) => ["教育背景", "教育经历", "education"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
-    const scope = headingIndex >= 0 ? lines.slice(headingIndex + 1, headingIndex + 12) : lines.slice(0, 20);
-    for (const line of scope) {
+    const scopeStart = headingIndex >= 0 ? headingIndex + 1 : 0;
+    const endIndex = lines.findIndex((line, index) => index >= scopeStart && [
+      "工作经历", "工作经验", "实习经历", "实习经验", "项目经历", "项目经验", "技术栈", "技能", "专业技能",
+      "employment", "experience", "projects", "skills"
+    ].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    const scopeEnd = endIndex >= scopeStart ? endIndex : Math.min(lines.length, scopeStart + 40);
+    const candidates = [];
+    for (let index = scopeStart; index < scopeEnd; index += 1) {
+      const line = lines[index];
       const range = dateRangeFromLine(line);
       if (!range || !/大学|学院|学校|University|College/i.test(line)) continue;
       const remainder = cleanValue(line.replace(range.raw, ""));
@@ -142,17 +149,54 @@
       if (!schoolMatch) continue;
       const degree = schoolMatch[2].match(/博士|硕士|本科|大专|专科|高中|Ph\.?D\.?|Master(?:'s)?|Bachelor(?:'s)?/i)?.[0] || "";
       const major = cleanValue(schoolMatch[2].replace(/[（(]?\s*(?:博士|硕士|本科|大专|专科|高中|Ph\.?D\.?|Master(?:'s)?|Bachelor(?:'s)?)\s*[）)]?/ig, ""));
-      setResult(result, "school", schoolMatch[1], 92, line);
-      if (degree) setResult(result, "degree", degree, 94, line);
-      if (major) setResult(result, "major", major, 88, line);
-      setResult(result, "educationStart", range.start, 92, line);
-      if (range.end) setResult(result, "educationEnd", range.end, 92, line);
-      break;
+      candidates.push({ index, line, range, school: schoolMatch[1], degree, major });
+    }
+    if (!candidates.length) return;
+    const experiences = candidates.map((candidate, candidateIndex) => {
+      const nextIndex = candidates[candidateIndex + 1]?.index || scopeEnd;
+      const detailLines = lines.slice(candidate.index + 1, nextIndex).filter((line) => !dateRangeFromLine(line));
+      const departmentLine = detailLines.find((line) => /^(?:院系|学院|所属院系|department|faculty)\s*[:：]/i.test(line));
+      const department = departmentLine ? cleanValue(departmentLine.replace(/^(?:院系|学院|所属院系|department|faculty)\s*[:：]/i, "")) : "";
+      const description = detailLines.filter((line) => line !== departmentLine).join("\n");
+      return {
+        school: candidate.school,
+        department,
+        degree: candidate.degree,
+        major: candidate.major,
+        startDate: candidate.range.start,
+        endDate: candidate.range.end,
+        ongoing: candidate.range.ongoing,
+        description,
+        confidence: 90
+      };
+    }).sort((left, right) => Number(right.ongoing) - Number(left.ongoing) || right.startDate.localeCompare(left.startDate));
+    result.educationExperiences = experiences;
+
+    // Flat education fields remain for backward compatibility, but are always
+    // derived from one complete record. This prevents a school from one record
+    // being combined with the major or degree from another record.
+    const latest = experiences[0];
+    const latestEvidence = candidates.find((candidate) => candidate.school === latest.school && candidate.range.start === latest.startDate)?.line || "";
+    const synchronized = {
+      school: latest.school,
+      department: latest.department,
+      degree: latest.degree,
+      major: latest.major,
+      educationStart: latest.startDate,
+      educationEnd: latest.endDate
+    };
+    for (const [key, value] of Object.entries(synchronized)) {
+      if (!value) delete result.profile[key];
+      else {
+        result.profile[key] = value;
+        result.details[key] = { confidence: key === "major" ? 88 : 92, evidence: latestEvidence.slice(0, 240) };
+      }
     }
   }
 
   function parseWorkExperiences(lines, result) {
     const headingIndex = lines.findIndex((line) => ["工作经历", "工作经验", "实习经历", "实习经验", "employment", "experience"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    const internshipSection = headingIndex >= 0 && /实习|internship/i.test(lines[headingIndex]);
     const scopeStart = headingIndex >= 0 && headingIndex < lines.length - 1 ? headingIndex + 1 : 0;
     const endIndex = lines.findIndex((line, index) => index >= scopeStart && ["项目经历", "项目经验", "教育背景", "教育经历", "技能", "专业技能", "projects", "education", "skills"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
     const scopeEnd = endIndex >= scopeStart ? endIndex : lines.length;
@@ -180,6 +224,7 @@
         startDate: candidate.range.start,
         endDate: candidate.range.end,
         ongoing: candidate.range.ongoing,
+        category: internshipSection || /实习/i.test(jobTitle) ? "internship" : "work",
         description: descriptionLines.join("\n"),
         confidence: 88
       };
@@ -194,10 +239,36 @@
     if (latest.description) setResult(result, "workDescription", latest.description, 82, latest.description);
   }
 
+  function parseProjectSummary(lines, result) {
+    const headingIndex = lines.findIndex((line) => ["项目经历", "项目经验", "projects", "project experience"].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    if (headingIndex < 0) return;
+    const nextHeadingIndex = lines.findIndex((line, index) => index > headingIndex && [
+      "技能", "专业技能", "技术栈", "证书", "获奖经历", "个人简介", "自我评价", "教育背景", "教育经历", "工作经历", "工作经验", "实习经历", "实习经验",
+      "skills", "certificates", "awards", "summary", "education", "experience"
+    ].some((heading) => normalizedKey(line) === normalizedKey(heading)));
+    const body = lines.slice(headingIndex + 1, nextHeadingIndex > headingIndex ? nextHeadingIndex : lines.length).map(cleanValue).filter(Boolean);
+    if (!body.length) return;
+    const paragraphs = [];
+    for (const line of body) {
+      const bullet = line.match(/^[·•●▪◦-]\s*(.+)$/);
+      if (bullet) {
+        paragraphs.push(`• ${bullet[1].trim()}`);
+      } else if (paragraphs.length > 1 && paragraphs[paragraphs.length - 1].startsWith("• ")) {
+        paragraphs[paragraphs.length - 1] += line;
+      } else {
+        paragraphs.push(line);
+      }
+    }
+    const firstBullet = paragraphs.findIndex((paragraph) => paragraph.startsWith("• "));
+    if (firstBullet > 1) paragraphs.splice(0, firstBullet, paragraphs.slice(0, firstBullet).join("｜"));
+    const summary = paragraphs.join("\n");
+    setResult(result, "projectSummary", summary, 92, summary);
+  }
+
   function extractProfileFromText(input) {
     const text = normalizeText(input);
     const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-    const result = { profile: {}, details: {}, workExperiences: [], textLength: text.length };
+    const result = { profile: {}, details: {}, educationExperiences: [], workExperiences: [], textLength: text.length };
 
     for (const [key, aliases] of Object.entries(labeledRules)) {
       const found = findLabeledValue(lines, aliases);
@@ -206,6 +277,7 @@
 
     parseEducation(lines, result);
     parseWorkExperiences(lines, result);
+    parseProjectSummary(lines, result);
 
     const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
     if (email) setResult(result, "email", email, 99, email);
@@ -314,7 +386,7 @@
       const data = JSON.parse(await file.text());
       const profile = data.profile || data;
       const details = Object.fromEntries(Object.keys(profile).map((key) => [key, { confidence: 100, evidence: "JSON 导入" }]));
-      return { profile, details, workExperiences: data.workExperiences || [], textLength: 0 };
+      return { profile, details, educationExperiences: data.educationExperiences || [], workExperiences: data.workExperiences || [], textLength: 0 };
     }
     let text;
     if (extension === "pdf") text = await parsePdf(file);

@@ -31,6 +31,10 @@ textarea { min-height: 112px; resize: vertical; }
 .section-title-row { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
 .section-title-row h2 { margin-bottom: 6px; }
 .inline-button { padding: 8px 11px; border: 1px solid #86a697; background: #f7fbf8; color: #246b4e; white-space: nowrap; }
+.switch-label { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid #86a697; border-radius: 8px; background: #f7fbf8; color: #246b4e; white-space: nowrap; }
+.switch-label input { width: auto; accent-color: #246b4e; }
+.ai-data-switch { width: fit-content; margin-top: 16px; white-space: normal; }
+.ai-notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: #eef6f1; color: #49645a; font-size: 12px; line-height: 1.6; }
 .experience-card { position: relative; margin-top: 14px; padding: 17px; border: 1px solid #d8e1dc; border-radius: 10px; background: #fbfcfb; }
 .experience-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .experience-card .wide { margin-top: 13px; }
@@ -52,11 +56,11 @@ textarea { min-height: 112px; resize: vertical; }
 .parse-confidence { justify-self: end; padding: 3px 7px; border-radius: 10px; background: #e5f1eb; color: #2e694f; font-size: 11px; }
 .parse-existing { grid-column: 3 / -1; margin-top: -5px; color: #8a6650; font-size: 11px; }
 .parse-subheading { margin: 20px 0 8px; font-size: 15px; }
-.parse-work-card { display: grid; grid-template-columns: 24px 1fr; gap: 10px; margin-top: 9px; padding: 13px; border: 1px solid #d8e1dc; border-radius: 9px; background: #f9fbfa; }
-.parse-work-check { margin-top: 3px; accent-color: #246b4e; }
-.parse-work-content { display: grid; gap: 5px; min-width: 0; }
-.parse-work-dates { color: #687871; font-size: 11px; }
-.parse-work-description { min-height: 90px; font-size: 12px; }
+.parse-work-card, .parse-education-card { display: grid; grid-template-columns: 24px 1fr; gap: 10px; margin-top: 9px; padding: 13px; border: 1px solid #d8e1dc; border-radius: 9px; background: #f9fbfa; }
+.parse-work-check, .parse-education-check { margin-top: 3px; accent-color: #246b4e; }
+.parse-work-content, .parse-education-content { display: grid; gap: 5px; min-width: 0; }
+.parse-work-dates, .parse-education-dates { color: #687871; font-size: 11px; }
+.parse-work-description, .parse-education-description { min-height: 90px; font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 24px 20px; border-top: 1px solid #e3e9e5; }
 .plain-button { border: 1px solid #c7d3cd; background: white; color: #45564f; }
 .apply-button { border: 1px solid #246b4e; background: #246b4e; color: white; font-weight: 700; }

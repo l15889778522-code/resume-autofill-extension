@@ -9,10 +9,43 @@
     <select id="degree"><option value="">请选择</option><option value="bachelor">本科</option></select>
     <label for="fuzzy-city">期望城巿</label><input id="fuzzy-city">
     <label for="custom">站点专用问题</label><input id="custom">
+    <label for="school-1">学校名称</label><input id="school-1">
+    <label for="major-1">专业名称</label><input id="major-1">
+    <label for="department-1">院系</label><input id="department-1">
+    <label for="school-2">学校名称</label><input id="school-2">
+    <label for="major-2">专业名称</label><input id="major-2">
+    <label for="department-2">院系</label><input id="department-2">
+    <span>请填写以下内容</span><textarea id="internship-summary" placeholder="可以填写您认为值得提及的实习经历，如：时间、公司、职位、项目和成果"></textarea>
+    <label for="project-summary">项目活动经验及研究成果</label><textarea id="project-summary" placeholder="请填写项目、活动经历及研究成果"></textarea>
     <label for="company-1">公司名称</label><input id="company-1">
     <label for="title-1">职位名称</label><input id="title-1">
     <label for="company-2">公司名称</label><input id="company-2">
     <label for="title-2">职位名称</label><input id="title-2">
+    <section>
+      <h2>求职偏好</h2>
+      <label id="employment-label">雇佣类型</label>
+      <button id="employment" type="button" role="combobox" aria-labelledby="employment-label" aria-controls="employment-options" aria-expanded="false">请选择</button>
+      <div id="employment-options" role="listbox" hidden>
+        <button type="button" role="option" data-value="full-time">全职</button>
+        <button type="button" role="option" data-value="internship">实习</button>
+      </div>
+    </section>
   </form>
+  <script>
+    const employment = document.querySelector("#employment");
+    const employmentOptions = document.querySelector("#employment-options");
+    employment.addEventListener("click", () => {
+      employmentOptions.hidden = false;
+      employment.setAttribute("aria-expanded", "true");
+    });
+    employmentOptions.addEventListener("click", (event) => {
+      const option = event.target.closest('[role="option"]');
+      if (!option) return;
+      employment.textContent = option.textContent;
+      employment.setAttribute("aria-valuetext", option.textContent);
+      employment.setAttribute("aria-expanded", "false");
+      employmentOptions.hidden = true;
+    });
+  </script>
 </body>
 </html>

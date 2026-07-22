@@ -87,6 +87,44 @@ assert.equal(pdfResult.profile.fullName, "Alice Chen");
 assert.equal(pdfResult.profile.email, "alice@example.com");
 assert.equal(pdfResult.profile.phone, "13800000000");
 
+const settingsContext = await browser.newContext();
+await settingsContext.addInitScript(() => {
+  globalThis.__storageData = {};
+  globalThis.__requestedOrigins = [];
+  globalThis.chrome = {
+    runtime: { getURL(relativePath) { return new URL(`/${relativePath}`, location.origin).href; } },
+    permissions: {
+      async contains() { return false; },
+      async request(request) { globalThis.__requestedOrigins = request.origins || []; return true; }
+    },
+    storage: {
+      local: {
+        async get(keys) {
+          const requested = Array.isArray(keys) ? keys : [keys];
+          return Object.fromEntries(requested.filter((key) => key in globalThis.__storageData).map((key) => [key, globalThis.__storageData[key]]));
+        },
+        async set(values) { Object.assign(globalThis.__storageData, values); }
+      }
+    }
+  };
+});
+const settingsPage = await settingsContext.newPage();
+await settingsPage.goto(`http://127.0.0.1:${port}/options.html`);
+assert.equal(await settingsPage.locator("#aiEndpoint").inputValue(), "https://api.deepseek.com/chat/completions");
+assert.equal(await settingsPage.locator("#aiModel").inputValue(), "deepseek-v4-flash");
+assert.equal(await settingsPage.locator("#aiShareResumeData").isChecked(), false);
+await settingsPage.locator("#aiEnabled").check();
+await settingsPage.locator("#aiShareResumeData").check();
+await settingsPage.locator("#aiApiKey").fill("local-test-key");
+await settingsPage.locator("#saveButton").click();
+await settingsPage.waitForFunction(() => Boolean(globalThis.__storageData.aiSettings));
+const savedSettings = await settingsPage.evaluate(() => ({ settings: globalThis.__storageData.aiSettings, origins: globalThis.__requestedOrigins }));
+assert.equal(savedSettings.settings.enabled, true);
+assert.equal(savedSettings.settings.shareResumeData, true);
+assert.equal(savedSettings.settings.apiKey, "local-test-key");
+assert.deepEqual(savedSettings.origins, ["https://api.deepseek.com/*"]);
+await settingsContext.close();
+
 if (process.env.RESUME_PDF_PATH) {
   const actualBytes = Array.from(readFileSync(process.env.RESUME_PDF_PATH));
   const actualResult = await page.evaluate(async (bytes) => {
@@ -96,12 +134,23 @@ if (process.env.RESUME_PDF_PATH) {
       hasLatestCompany: Boolean(result.profile.latestCompany),
       hasLatestJobTitle: Boolean(result.profile.latestJobTitle),
       hasWorkDescription: Boolean(result.profile.workDescription),
+      projectSummary: result.profile.projectSummary || "",
+      educationExperienceCount: Array.isArray(result.educationExperiences) ? result.educationExperiences.length : 0,
+      educationSummaries: (result.educationExperiences || []).map((education) => ({ school: education.school, major: education.major, degree: education.degree })),
       workExperienceCount: Array.isArray(result.workExperiences) ? result.workExperiences.length : 0,
-      workSummaries: (result.workExperiences || []).map((experience) => ({ company: experience.company, jobTitle: experience.jobTitle, descriptionStart: experience.description.slice(0, 24) })),
+      workSummaries: (result.workExperiences || []).map((experience) => ({ company: experience.company, jobTitle: experience.jobTitle, category: experience.category, descriptionStart: experience.description.slice(0, 24) })),
       textLength: result.textLength
     };
   }, actualBytes);
   console.log("ACTUAL_RESUME", JSON.stringify(actualResult));
+  assert.equal(actualResult.educationExperienceCount, 2);
+  assert.deepEqual(actualResult.educationSummaries, [
+    { school: "香港理工大学", major: "医疗数据科学", degree: "硕士" },
+    { school: "北师香港浸会大学", major: "统计学", degree: "本科" }
+  ]);
+  assert.equal(actualResult.workSummaries.every((experience) => experience.category === "internship"), true);
+  assert.match(actualResult.projectSummary, /用户行为分析与运营策略优化/);
+  assert.match(actualResult.projectSummary, /用户分层与内容生态诊断/);
 
   const optionsContext = await browser.newContext();
   await optionsContext.addInitScript(() => {
@@ -123,17 +172,29 @@ if (process.env.RESUME_PDF_PATH) {
   await optionsPage.goto(`http://127.0.0.1:${port}/options.html`);
   await optionsPage.locator("#resumeFile").setInputFiles(process.env.RESUME_PDF_PATH);
   await optionsPage.locator("#parseDialog").waitFor({ state: "visible" });
+  assert.equal(await optionsPage.locator(".parse-education-card").count(), 2);
   assert.equal(await optionsPage.locator(".parse-work-card").count(), 2);
   await optionsPage.locator("#applyParsed").click();
   const saved = await optionsPage.evaluate(() => globalThis.__storageData);
+  assert.equal(saved.educationExperiences.length, 2);
+  assert.equal(saved.profile.school, saved.educationExperiences[0].school);
+  assert.equal(saved.educationExperiences[1].school, "北师香港浸会大学");
+  assert.equal(saved.educationExperiences[1].major, "统计学");
   assert.equal(saved.workExperiences.length, 2);
   assert.equal(saved.profile.latestCompany, saved.workExperiences[0].company);
+  assert.match(saved.profile.projectSummary, /用户行为分析与运营策略优化/);
   while (await optionsPage.locator(".experience-remove").count()) await optionsPage.locator(".experience-remove").first().click();
   await optionsPage.locator("#saveButton").click();
   await optionsPage.waitForTimeout(50);
   const afterDelete = await optionsPage.evaluate(() => globalThis.__storageData);
   assert.equal(afterDelete.workExperiences.length, 0);
   assert.equal(afterDelete.profile.latestCompany, "");
+  while (await optionsPage.locator(".education-remove").count()) await optionsPage.locator(".education-remove").first().click();
+  await optionsPage.locator("#saveButton").click();
+  await optionsPage.waitForTimeout(50);
+  const afterEducationDelete = await optionsPage.evaluate(() => globalThis.__storageData);
+  assert.equal(afterEducationDelete.educationExperiences.length, 0);
+  assert.equal(afterEducationDelete.profile.school, "");
   await optionsContext.close();
 }
 

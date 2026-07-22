@@ -10,7 +10,8 @@
     "input:not([type=hidden]):not([type=password]):not([type=file]):not([type=submit]):not([type=button]):not([type=reset])",
     "textarea",
     "select",
-    "[contenteditable=true]"
+    "[contenteditable=true]",
+    "[role=combobox]"
   ].join(",");
 
   function normalize(value) {
@@ -104,6 +105,49 @@
     };
   }
 
+  function sectionFor(element) {
+    const parts = [];
+    const fieldset = element.closest("fieldset");
+    if (fieldset) parts.push(textOf(fieldset.querySelector("legend")));
+    const container = element.closest("section, article, [role=group], .form-section, .form-group, .form-item, .ant-form-item, .el-form-item");
+    if (container) {
+      const heading = container.querySelector("h1, h2, h3, h4, [role=heading], .section-title, .form-title");
+      if (heading && !heading.contains(element)) parts.push(textOf(heading));
+    }
+    let cursor = element.parentElement;
+    let foundHeading = false;
+    for (let depth = 0; cursor && depth < 4; depth += 1, cursor = cursor.parentElement) {
+      let sibling = cursor.previousElementSibling;
+      while (sibling) {
+        if (/^H[1-4]$/.test(sibling.tagName) || sibling.getAttribute("role") === "heading") {
+          parts.push(textOf(sibling));
+          foundHeading = true;
+          break;
+        }
+        sibling = sibling.previousElementSibling;
+      }
+      if (foundHeading) break;
+    }
+    return [...new Set(parts.filter((part) => part && part.length <= 100))].join(" · ").slice(0, 180);
+  }
+
+  function instructionFor(element) {
+    const container = element.closest(".form-item, .ant-form-item, .el-form-item, [role=group], section, article");
+    if (!container) return "";
+    return textOf(container).replace(textOf(element), "").replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+
+  function optionsFor(element) {
+    if (element instanceof HTMLSelectElement) return Array.from(element.options).map((option) => option.text.trim()).filter(Boolean).slice(0, 80);
+    if (element.type === "radio") {
+      const group = element.name ? Array.from(document.querySelectorAll(`input[type=radio][name="${CSS.escape(element.name)}"]`)) : [element];
+      return group.map((item) => labelFor(item) || item.value).filter(Boolean).slice(0, 80);
+    }
+    const controlledId = element.getAttribute("aria-controls") || element.getAttribute("aria-owns");
+    const controlled = controlledId ? document.getElementById(controlledId) : null;
+    return controlled ? Array.from(controlled.querySelectorAll('[role="option"]')).map(textOf).filter(Boolean).slice(0, 80) : [];
+  }
+
   function scoreAlias(descriptor, alias) {
     const needle = normalize(alias);
     if (!needle) return 0;
@@ -142,6 +186,19 @@
     const inputType = (element.getAttribute("type") || "").toLowerCase();
     if (inputType === "email" && result.score < 88) result = { key: "email", score: 88 };
     if (inputType === "tel" && result.score < 88) result = { key: "phone", score: 88 };
+    const descriptorText = normalize(Object.values(descriptor).join(" "));
+    if (element instanceof HTMLTextAreaElement && /实习经历|实习经验|实践经历/.test(descriptorText) && result.score < 92) {
+      result = { key: "internshipSummary", score: 92 };
+    }
+    if (element instanceof HTMLTextAreaElement && /教育经历|教育背景|学习经历/.test(descriptorText) && result.score < 92) {
+      result = { key: "educationSummary", score: 92 };
+    }
+    if (element instanceof HTMLTextAreaElement && /工作经历|工作经验|任职经历/.test(descriptorText) && result.score < 92) {
+      result = { key: "workSummary", score: 92 };
+    }
+    if (element instanceof HTMLTextAreaElement && /项目活动经验|项目活动经历|项目经历|项目经验|研究成果|科研经历/.test(descriptorText) && result.score < 94) {
+      result = { key: "projectSummary", score: 94 };
+    }
     return result;
   }
 
@@ -177,6 +234,10 @@
     }
     if (element.type === "checkbox") return element.checked ? element.value : "";
     if (element.isContentEditable) return textOf(element);
+    if (element.getAttribute("role") === "combobox" && !("value" in element)) {
+      const value = element.getAttribute("aria-valuetext") || textOf(element);
+      return /^(请选择|选择|select|please select)$/i.test(String(value).trim()) ? "" : value;
+    }
     return element.value || "";
   }
 
@@ -202,9 +263,35 @@
       .some((token) => text.includes(normalize(token)));
   }
 
-  function scan(profile, siteRules, learnedAnswers) {
+  function inferRecordIndex(element, records, fallbackIndex) {
+    if (!records?.length) return fallbackIndex;
+    let container = element.parentElement;
+    for (let depth = 0; container && depth < 7; depth += 1, container = container.parentElement) {
+      const nearbyValues = Array.from(container.querySelectorAll(supportedSelector))
+        .filter((candidate) => candidate !== element && visible(candidate))
+        .map((candidate) => normalize(currentValue(candidate)))
+        .filter((value) => value.length >= 2);
+      if (!nearbyValues.length) continue;
+      const scores = records.map((record) => ["school", "department", "major", "degree", "startDate", "endDate"]
+        .map((key) => normalize(record?.[key]))
+        .filter((value) => value.length >= 2)
+        .reduce((score, value) => score + Number(nearbyValues.some((nearby) => nearby.includes(value) || value.includes(nearby))), 0));
+      const bestScore = Math.max(...scores);
+      if (bestScore <= 0 || scores.filter((score) => score === bestScore).length !== 1) continue;
+      return scores.indexOf(bestScore);
+    }
+    return fallbackIndex;
+  }
+
+  function scan(profile, siteRules, learnedAnswers, educationExperiences = [], workExperiences = []) {
     const radioGroups = new Set();
     const workOccurrences = {};
+    const educationOccurrences = {};
+    const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+    const aggregateWorkKeys = new Set(["internshipSummary", "workSummary"]);
+    const aggregateEducationKeys = new Set(["educationSummary"]);
+    const aggregateProjectKeys = new Set(["projectSummary"]);
+    const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const candidates = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
       if (!visible(element)) continue;
@@ -218,11 +305,23 @@
       const fieldSignature = signature(element, descriptor);
       const savedRule = siteRules?.[fieldSignature] || "";
       const profileRule = savedRule.startsWith("profile:") ? savedRule.slice(8) : (catalog.byKey[savedRule] ? savedRule : "");
-      const learnedRule = savedRule.startsWith("learned:") ? savedRule.slice(8) : "";
       const match = bestMatch(element, descriptor, profileRule);
+      const savedLearnedRule = savedRule.startsWith("learned:") ? savedRule.slice(8) : "";
+      // Older versions could remember a standard repeated field as a custom
+      // learned answer. Once the field is clearly recognized as education or
+      // work, let the structured record take precedence over that stale rule.
+      const hasStructuredContainer = ((educationKeys.has(match.key) || aggregateEducationKeys.has(match.key)) && (educationExperiences.length || profile?.[match.key]))
+        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && (workExperiences.length || profile?.[match.key]))
+        || (aggregateProjectKeys.has(match.key) && profile?.[match.key]);
+      const isStructuredMatch = match.score >= 68 && hasStructuredContainer;
+      const learnedRule = isStructuredMatch ? "" : savedLearnedRule;
       const matched = match.score >= 48;
       const field = matched ? catalog.byKey[match.key] : null;
       const profileValue = field && !learnedRule ? String(profile?.[match.key] || "").trim() : "";
+      const structuredAvailable = !learnedRule && matched && (((educationKeys.has(match.key) || aggregateEducationKeys.has(match.key)) && educationExperiences.length)
+        || ((workKeys.has(match.key) || aggregateWorkKeys.has(match.key)) && workExperiences.length)
+        || (aggregateProjectKeys.has(match.key) && profile?.[match.key]));
+      const sourceAvailable = Boolean(profileValue) || Boolean(structuredAvailable);
       const naturalQuestionKey = questionKey(descriptor);
       const learnedMatch = bestLearnedMatch(naturalQuestionKey, learnedAnswers, learnedRule);
       const learnedKey = learnedMatch.key;
@@ -235,32 +334,55 @@
         elementId = crypto.randomUUID();
         element.setAttribute(markerAttribute, elementId);
       }
-      const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
-      const occurrenceKey = profileValue && workKeys.has(match.key) ? match.key : "";
-      const repeatIndex = occurrenceKey ? (workOccurrences[occurrenceKey] || 0) : 0;
-      if (occurrenceKey) workOccurrences[occurrenceKey] = repeatIndex + 1;
+      const workOccurrenceKey = sourceAvailable && workKeys.has(match.key) ? match.key : "";
+      const educationOccurrenceKey = sourceAvailable && educationKeys.has(match.key) ? match.key : "";
+      const repeatIndex = workOccurrenceKey ? (workOccurrences[workOccurrenceKey] || 0) : (educationOccurrenceKey ? (educationOccurrences[educationOccurrenceKey] || 0) : 0);
+      if (workOccurrenceKey) workOccurrences[workOccurrenceKey] = repeatIndex + 1;
+      if (educationOccurrenceKey) educationOccurrences[educationOccurrenceKey] = repeatIndex + 1;
+      const recordType = workOccurrenceKey ? "work" : (educationOccurrenceKey ? "education" : "");
+      const recordIndex = recordType === "education" ? inferRecordIndex(element, educationExperiences, repeatIndex) : repeatIndex;
+      let preferredSourceRef = /^(?:experience|education):/.test(savedRule) ? savedRule : "";
+      if (preferredSourceRef && recordType) {
+        const [savedType, savedIndex] = preferredSourceRef.split(":");
+        const expectedSourceType = recordType === "work" ? "experience" : recordType;
+        if (savedType !== expectedSourceType || Number(savedIndex) !== Number(recordIndex)) preferredSourceRef = "";
+      }
       candidates.push({
         elementId,
         signature: fieldSignature,
         label: descriptor.label || descriptor.aria || descriptor.placeholder || descriptor.name || descriptor.id || "未命名字段",
+        section: sectionFor(element),
+        placeholder: descriptor.placeholder,
+        instruction: instructionFor(element),
+        aria: descriptor.aria,
+        name: descriptor.name,
         tag: element.tagName.toLowerCase(),
         inputType: element.getAttribute("type") || "",
+        required: element.required || element.getAttribute("aria-required") === "true",
+        options: optionsFor(element),
         questionKey: naturalQuestionKey,
-        matchedKey: profileValue ? match.key : "",
-        learnedKey: profileValue ? "" : learnedKey,
-        preferredSourceRef: savedRule.startsWith("experience:") ? savedRule : "",
+        matchedKey: sourceAvailable ? match.key : "",
+        learnedKey: sourceAvailable ? "" : learnedKey,
+        preferredSourceRef,
         repeatIndex,
+        recordType,
+        recordIndex: recordType ? recordIndex : 0,
+        aggregateType: match.key === "internshipSummary" ? "internship" : (match.key === "workSummary" ? "work" : (match.key === "educationSummary" ? "education" : (match.key === "projectSummary" ? "project" : ""))),
         score: match.score,
-        confidence: profileValue ? match.score : learnedMatch.score,
+        confidence: sourceAvailable ? match.score : learnedMatch.score,
         currentValue: currentValue(element),
-        sensitive: isSensitive(descriptor, profileValue ? field : learnedAnswer)
+        sensitive: isSensitive(descriptor, sourceAvailable ? field : learnedAnswer)
       });
     }
     return candidates;
   }
 
-  function capture(profile) {
+  function capture(profile, educationExperiences = [], workExperiences = []) {
     const radioGroups = new Set();
+    const workOccurrences = {};
+    const educationOccurrences = {};
+    const workKeys = new Set(["latestCompany", "latestJobTitle", "workStart", "workEnd", "workDescription"]);
+    const educationKeys = new Set(["school", "department", "degree", "major", "educationStart", "educationEnd"]);
     const captured = [];
     for (const element of document.querySelectorAll(supportedSelector)) {
       if (!visible(element) || element.type === "checkbox") continue;
@@ -275,12 +397,20 @@
       if (!key || !value) continue;
       const match = bestMatch(element, descriptor, "");
       const field = match.score >= 48 ? catalog.byKey[match.key] : null;
+      const recordType = field && educationKeys.has(field.key) && educationExperiences.length ? "education"
+        : (field && workKeys.has(field.key) && workExperiences.length ? "work" : "");
+      const occurrences = recordType === "education" ? educationOccurrences : workOccurrences;
+      const repeatIndex = recordType ? (occurrences[field.key] || 0) : 0;
+      if (recordType) occurrences[field.key] = repeatIndex + 1;
+      const recordIndex = recordType === "education" ? inferRecordIndex(element, educationExperiences, repeatIndex) : repeatIndex;
       captured.push({
         signature: signature(element, descriptor),
         questionKey: key,
         label: descriptor.label || descriptor.aria || descriptor.placeholder || descriptor.name || descriptor.id,
         value,
         matchedKey: field?.key || "",
+        recordType,
+        recordIndex: recordType ? recordIndex : 0,
         sensitive: isSensitive(descriptor, field)
       });
     }
@@ -335,9 +465,40 @@
     return true;
   }
 
-  function fillOne(element, value) {
+  function wait(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+
+  async function fillCombobox(element, value) {
+    const wanted = variants(value);
+    element.focus();
+    element.click();
+    await wait(120);
+    const controlledId = element.getAttribute("aria-controls") || element.getAttribute("aria-owns");
+    const controlled = controlledId ? document.getElementById(controlledId) : null;
+    const optionRoot = controlled || document;
+    const options = Array.from(optionRoot.querySelectorAll('[role="option"]')).filter((option) => {
+      const style = getComputedStyle(option);
+      const box = option.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 1 && box.height > 1;
+    });
+    const choice = options.find((option) => wanted.has(normalize(option.getAttribute("data-value"))) || wanted.has(normalize(textOf(option)))) ||
+      options.find((option) => Array.from(wanted).some((token) => normalize(textOf(option)).includes(token)));
+    if (choice) {
+      choice.click();
+      return true;
+    }
+    if (element instanceof HTMLInputElement) {
+      nativeSetValue(element, value);
+      return true;
+    }
+    return false;
+  }
+
+  async function fillOne(element, value) {
     let changed = false;
-    if (element instanceof HTMLSelectElement) changed = fillSelect(element, value);
+    if (element.getAttribute("role") === "combobox" && !(element instanceof HTMLSelectElement)) changed = await fillCombobox(element, value);
+    else if (element instanceof HTMLSelectElement) changed = fillSelect(element, value);
     else if (element.type === "radio") changed = fillRadio(element, value);
     else if (element.isContentEditable) {
       element.focus();
@@ -361,12 +522,12 @@
     return changed;
   }
 
-  function fill(selections) {
+  async function fill(selections) {
     let filled = 0;
     const failed = [];
     for (const selection of selections) {
       const element = document.querySelector(`[${markerAttribute}="${CSS.escape(selection.elementId)}"]`);
-      if (!element || !visible(element) || !fillOne(element, String(selection.value || ""))) {
+      if (!element || !visible(element) || !(await fillOne(element, String(selection.value || "")))) {
         failed.push(selection.label || selection.key);
       } else {
         filled += 1;
@@ -376,10 +537,19 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "RESUME_FILL") {
+      fill(message.selections || [])
+        .then((result) => sendResponse({ ok: true, ...result }))
+        .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      return true;
+    }
     try {
-      if (message.type === "RESUME_SCAN") sendResponse({ ok: true, candidates: scan(message.profile, message.siteRules, message.learnedAnswers) });
-      else if (message.type === "RESUME_FILL") sendResponse({ ok: true, ...fill(message.selections || []) });
-      else if (message.type === "RESUME_CAPTURE") sendResponse({ ok: true, captured: capture(message.profile || {}) });
+      if (message.type === "RESUME_SCAN") sendResponse({
+        ok: true,
+        candidates: scan(message.profile, message.siteRules, message.learnedAnswers, message.educationExperiences, message.workExperiences),
+        pageContext: { language: document.documentElement.lang || navigator.language || "" }
+      });
+      else if (message.type === "RESUME_CAPTURE") sendResponse({ ok: true, captured: capture(message.profile || {}, message.educationExperiences, message.workExperiences) });
     } catch (error) {
       sendResponse({ ok: false, error: error.message || String(error) });
     }

@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "profile": {
     "fullName": "张三",
     "englishName": "San Zhang",
@@ -17,6 +17,7 @@
     "expectedSalary": "35k-45k",
     "availableDate": "2026-08-01",
     "school": "示例大学",
+    "department": "计算机学院",
     "degree": "本科",
     "major": "计算机科学与技术",
     "educationStart": "2013-09-01",
@@ -32,6 +33,18 @@
     "summary": "5 年前端开发经验，关注工程效率、用户体验与可维护性。",
     "idNumber": ""
   },
+  "educationExperiences": [
+    {
+      "school": "示例大学",
+      "department": "计算机学院",
+      "major": "计算机科学与技术",
+      "degree": "本科",
+      "startDate": "2013-09-01",
+      "endDate": "2017-06-30",
+      "ongoing": false,
+      "description": "主修数据结构、数据库与软件工程。"
+    }
+  ],
   "workExperiences": [
     {
       "company": "示例科技有限公司",
@@ -39,6 +52,7 @@
       "startDate": "2021-03-01",
       "endDate": "2026-07-01",
       "ongoing": false,
+      "category": "work",
       "description": "负责核心业务前端架构与性能优化。"
     }
   ],
